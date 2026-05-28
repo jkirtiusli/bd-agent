@@ -1,0 +1,17 @@
+# Config real de cada granja (NUNCA al repo: lleva rutas y tokens)
+config.yaml
+*.local.yaml
+
+# Datos generados
+datos_normalizados.json
+*.json
+!package*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs
+*.log

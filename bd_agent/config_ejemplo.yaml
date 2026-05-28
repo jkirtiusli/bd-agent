@@ -1,0 +1,13 @@
+# ===== Configuracion del Agente (una por granja) =====
+granja: "astillas_de_plata"
+zona_horaria: "America/Argentina/Buenos_Aires"   # misma para todas tus granjas
+
+ruta_csv: 'C:\Users\PC\OneDrive\Escritorio\BDCopy\BackUp\csv'
+intervalo_segundos: 300
+centinela: true            # avisa en el log si aparecen datos nuevos sin mapear
+
+destino:
+  modo: "local_json"       # local_json | http
+  ruta_salida: 'C:\farmapi\datos_normalizados.json'
+  url: "https://tu-servidor.com/ingest"
+  token: "PEGAR_TOKEN"
