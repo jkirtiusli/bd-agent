@@ -7,7 +7,7 @@ intervalo_segundos: 300
 centinela: true            # avisa en el log si aparecen datos nuevos sin mapear
 
 destino:
-  modo: "local_json"       # local_json | http
+  modo: "http"             # local_json | http  (http empuja al Core)
   ruta_salida: 'C:\farmapi\datos_normalizados.json'
-  url: "https://tu-servidor.com/ingest"
+  url: "https://core.flowkore.com/ingest"
   token: "PEGAR_TOKEN"

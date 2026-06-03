@@ -16,6 +16,8 @@ Disenado para instalarse identico en multiples granjas.
 3. Crear la config de esta granja (NO se sube al repo):
        copy bd_agent\config_ejemplo.yaml config.yaml
    Editar config.yaml: ajustar granja, zona_horaria y ruta_csv.
+   Para empujar al Core, dejar destino.modo: "http" y
+   destino.url: "https://core.flowkore.com/ingest" (token = el de ingesta).
 
 4. Probar:
        python -m bd_agent.agente --config config.yaml --once
