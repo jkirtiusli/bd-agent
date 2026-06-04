@@ -1,9 +1,11 @@
 @echo off
 REM Corre el Agente una vez (--once). Sirve para on-demand (doble clic)
-REM y lo invoca la Tarea Programada. Ajustar AGENTE_DIR si el repo no esta
-REM en C:\farmapi\agente.
+REM y lo invoca la Tarea Programada.
+REM AGENTE_DIR se deduce solo: es la carpeta padre de este .bat (raiz del
+REM repo, la que contiene la carpeta bd_agent\). Asi funciona en cualquier
+REM PC sin editar la ruta, este el repo donde este.
 setlocal
-set AGENTE_DIR=C:\farmapi\agente
+set AGENTE_DIR=%~dp0..
 cd /d "%AGENTE_DIR%"
 
 REM Activar venv si existe (opcional)
