@@ -20,3 +20,26 @@ def test_construir_body():
     assert body["registros"] == 12
     assert body["mensaje"] == "ok"
     assert "agente_ts" in body and body["agente_ts"]  # ISO no vacío
+
+
+def test_reportar_no_propaga_errores(monkeypatch):
+    import bd_agent.salud as salud
+
+    def explota(*a, **k):
+        raise OSError("sin red")
+    monkeypatch.setattr(salud.urllib.request, "urlopen", explota)
+    cfg = {"granja": "g", "destino": {"modo": "http",
+           "url": "https://core.flowkore.com/ingest", "token": "T"}}
+    # no debe lanzar
+    salud.reportar(cfg, ok=True, registros=1, mensaje="x")
+
+
+def test_reportar_noop_si_no_http():
+    import bd_agent.salud as salud
+    llamado = {"v": False}
+
+    # si intentara abrir red, fallaría; con modo local_json no debe tocar la red
+    cfg = {"granja": "g", "destino": {"modo": "local_json",
+           "ruta_salida": "x.json"}}
+    salud.reportar(cfg, ok=True, registros=1, mensaje="x")  # no-op, no lanza
+    assert llamado["v"] is False
