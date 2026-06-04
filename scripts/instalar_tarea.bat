@@ -8,12 +8,19 @@ set CORRER_BAT=%~dp0correr_agente.bat
 set HORA=12:30
 set NOMBRE_TAREA=AgenteBDCopy
 
+REM Se pasa "--tarea" para que correr_agente.bat corra desatendido (sin pausa).
 schtasks /Create /TN "%NOMBRE_TAREA%" ^
-  /TR "\"%CORRER_BAT%\"" ^
+  /TR "\"%CORRER_BAT%\" --tarea" ^
   /SC DAILY /ST %HORA% /F
 
 echo.
-echo Tarea "%NOMBRE_TAREA%" creada: corre diariamente a las %HORA%.
+if %errorlevel%==0 (
+  echo OK: tarea "%NOMBRE_TAREA%" creada. Corre todos los dias a las %HORA%.
+) else (
+  echo ERROR: no se pudo crear la tarea (codigo %errorlevel%^).
+  echo   - Estas corriendo este .bat como ADMINISTRADOR?
+  echo     Clic derecho sobre instalar_tarea.bat -^> Ejecutar como administrador.
+)
 echo.
 echo NOTA: por defecto la tarea solo corre si el usuario esta logueado.
 echo Para que corra este o no conectado el usuario, recrear con credenciales:
@@ -22,4 +29,7 @@ echo.
 echo Para probar ahora:   schtasks /Run /TN "%NOMBRE_TAREA%"
 echo Para ver estado:     schtasks /Query /TN "%NOMBRE_TAREA%" /V /FO LIST
 echo Para borrarla:       schtasks /Delete /TN "%NOMBRE_TAREA%" /F
+echo.
+echo ===== Apreta una tecla para cerrar. =====
+pause >nul
 endlocal
