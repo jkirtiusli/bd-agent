@@ -7,23 +7,33 @@ import yaml
 
 from bd_agent import parser as bd_parser
 from bd_agent import destino as bd_destino
+from bd_agent import salud
 
 def cargar_config(ruta):
     with open(ruta, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def ciclo_trabajo(cfg, log):
+    """Lee CSV, entrega al destino y reporta heartbeat. Devuelve (ok, n, msg)."""
     zona = cfg.get("zona_horaria", "UTC")
     registros, avisos = bd_parser.escanear(cfg["ruta_csv"], cfg["granja"], zona)
     if not registros:
         log.warning("No se encontraron registros. Revisa 'ruta_csv'.")
-        return
-    # Centinela (apagado: solo informa en log, no notifica)
+        salud.reportar(cfg, ok=True, registros=0, mensaje="sin registros nuevos")
+        return True, 0, "sin registros nuevos"
     if avisos and cfg.get("centinela", True):
         for nave, archs in avisos.items():
             log.info(f"[centinela] {nave}: datos nuevos sin mapear -> {', '.join(archs)}")
-    resultado = bd_destino.entregar(registros, cfg["destino"])
+    try:
+        resultado = bd_destino.entregar(registros, cfg["destino"])
+    except Exception as e:
+        msg = f"error al entregar: {e}"
+        log.error(msg)
+        salud.reportar(cfg, ok=False, registros=len(registros), mensaje=msg)
+        return False, len(registros), msg
     log.info(resultado)
+    salud.reportar(cfg, ok=True, registros=len(registros), mensaje=resultado)
+    return True, len(registros), resultado
 
 def main():
     ap = argparse.ArgumentParser(description="Agente BD-Copy")
