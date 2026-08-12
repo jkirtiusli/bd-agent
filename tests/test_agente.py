@@ -200,7 +200,7 @@ def test_main_config_invalida_devuelve_codigo_config(tmp_path):
 def test_main_reenviar_desde(tmp_path, monkeypatch):
     ruta_cfg = tmp_path / "config.yaml"
     ruta_cfg.write_text(
-        f'granja: g\nruta_csv: "{tmp_path}"\n'
+        f'granja: g\nruta_csv: {bd_config.citar_yaml(tmp_path)}\n'
         f'destino:\n  modo: "http"\n  url: "https://core.test/ingest"\n  token: "t"\n',
         encoding="utf-8")
     with bd_spool.Spool(str(tmp_path / "spool.db")) as sp:

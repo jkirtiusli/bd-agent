@@ -9,6 +9,7 @@ tiene que pasar cuando algo sale mal.
 import io
 import os
 import json
+import pathlib
 import hashlib
 import tarfile
 import urllib.error
@@ -145,53 +146,60 @@ def test_corta_si_supera_el_tope(tmp_path, servir):
 # ---------------- reemplazo del ejecutable ----------------
 
 def falso_exe(ruta, version, ok=True):
-    """Un 'ejecutable' que imprime su version (o falla)."""
-    ruta.write_text(
-        "#!/bin/sh\n" + (f"echo 'agente-bd-copy {version}'\n" if ok
-                         else "echo 'roto' >&2\nexit 1\n"),
-        encoding="utf-8")
+    """
+    Un 'ejecutable' de mentira que imprime su version (o falla).
+
+    En Windows tiene que ser un .bat: un script con shebang de shell da
+    [WinError 193] "%1 is not a valid Win32 application". Devuelve la ruta
+    real, que puede no ser la que se paso.
+    """
+    ruta = pathlib.Path(ruta)
+    if os.name == "nt":
+        ruta = ruta.with_suffix(".bat")
+        contenido = "@echo off\r\n" + (f"echo agente-bd-copy {version}\r\n" if ok
+                                       else "echo roto 1>&2\r\nexit /b 1\r\n")
+    else:
+        contenido = "#!/bin/sh\n" + (f"echo 'agente-bd-copy {version}'\n" if ok
+                                    else "echo 'roto' >&2\nexit 1\n")
+    ruta.write_text(contenido, encoding="utf-8")
     os.chmod(ruta, 0o755)
-    return str(ruta)
+    return ruta
 
 
 def test_reemplaza_y_guarda_la_anterior(tmp_path):
-    actual = tmp_path / "agente.exe"
-    falso_exe(actual, "3.0.0")
+    actual = falso_exe(tmp_path / "agente.exe", "3.0.0")
     nuevo = falso_exe(tmp_path / "nuevo.bin", "3.1.0")
 
-    viejo = act.aplicar_ejecutable(nuevo, "3.1.0", ruta_actual=str(actual))
+    viejo = act.aplicar_ejecutable(str(nuevo), "3.1.0", ruta_actual=str(actual))
     assert "3.1.0" in actual.read_text()
     assert os.path.exists(viejo) and "3.0.0" in open(viejo).read()
 
 
 def test_no_reemplaza_si_lo_bajado_no_arranca(tmp_path):
     """La verificacion es ANTES de tocar nada: el original queda intacto."""
-    actual = tmp_path / "agente.exe"
-    falso_exe(actual, "3.0.0")
+    actual = falso_exe(tmp_path / "agente.exe", "3.0.0")
     nuevo = falso_exe(tmp_path / "nuevo.bin", "3.1.0", ok=False)
 
     with pytest.raises(act.ErrorActualizacion):
-        act.aplicar_ejecutable(nuevo, "3.1.0", ruta_actual=str(actual))
+        act.aplicar_ejecutable(str(nuevo), "3.1.0", ruta_actual=str(actual))
     assert "3.0.0" in actual.read_text()
     assert not os.path.exists(str(actual) + ".viejo")
 
 
 def test_no_reemplaza_si_reporta_otra_version(tmp_path):
     """Defensa contra un manifiesto que apunta al binario equivocado."""
-    actual = tmp_path / "agente.exe"
-    falso_exe(actual, "3.0.0")
+    actual = falso_exe(tmp_path / "agente.exe", "3.0.0")
     nuevo = falso_exe(tmp_path / "nuevo.bin", "2.9.0")
 
     with pytest.raises(act.ErrorActualizacion, match="se esperaba"):
-        act.aplicar_ejecutable(nuevo, "3.1.0", ruta_actual=str(actual))
+        act.aplicar_ejecutable(str(nuevo), "3.1.0", ruta_actual=str(actual))
     assert "3.0.0" in actual.read_text()
 
 
 def test_revertir_vuelve_a_la_anterior(tmp_path, monkeypatch):
-    actual = tmp_path / "agente.exe"
-    falso_exe(actual, "3.0.0")
+    actual = falso_exe(tmp_path / "agente.exe", "3.0.0")
     nuevo = falso_exe(tmp_path / "nuevo.bin", "3.1.0")
-    act.aplicar_ejecutable(nuevo, "3.1.0", ruta_actual=str(actual))
+    act.aplicar_ejecutable(str(nuevo), "3.1.0", ruta_actual=str(actual))
 
     monkeypatch.setattr(act, "es_ejecutable", lambda: True)
     act.revertir(ruta_actual=str(actual))
@@ -202,7 +210,7 @@ def test_revertir_sin_version_anterior_avisa(tmp_path, monkeypatch):
     actual = falso_exe(tmp_path / "agente.exe", "3.0.0")
     monkeypatch.setattr(act, "es_ejecutable", lambda: True)
     with pytest.raises(act.ErrorActualizacion, match="no hay version anterior"):
-        act.revertir(ruta_actual=actual)
+        act.revertir(ruta_actual=str(actual))
 
 
 # ---------------- paquete de codigo (gateway) ----------------

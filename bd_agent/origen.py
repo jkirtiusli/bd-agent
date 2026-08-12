@@ -17,6 +17,7 @@ import logging
 import datetime as dt
 import subprocess
 
+from bd_agent.config import citar_yaml
 from bd_agent.parser import parse_nombre_nave, procesar_nave
 
 log = logging.getLogger("agente.origen")
@@ -248,11 +249,6 @@ def elegir_carpeta_grafica(inicial=None):
 _RE_RUTA_CSV = re.compile(r"^(\s*)ruta_csv\s*:.*$", re.MULTILINE)
 
 
-def _yaml_comilla_simple(valor):
-    """Comilla simple de YAML: no interpreta \\ , ideal para rutas de Windows."""
-    return "'" + str(valor).replace("'", "''") + "'"
-
-
 def guardar_ruta_csv(ruta_config, nueva_ruta):
     """
     Escribe ruta_csv en el config preservando comentarios y el resto del
@@ -270,7 +266,7 @@ def guardar_ruta_csv(ruta_config, nueva_ruta):
     with open(ruta_config, "r", encoding="utf-8") as f:
         texto = f.read()
 
-    linea = f"ruta_csv: {_yaml_comilla_simple(nueva_ruta)}"
+    linea = f"ruta_csv: {citar_yaml(nueva_ruta)}"
     if _RE_RUTA_CSV.search(texto):
         texto = _RE_RUTA_CSV.sub(lambda m: m.group(1) + linea, texto, count=1)
     else:

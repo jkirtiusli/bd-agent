@@ -3,7 +3,7 @@
 > Copiar todo lo que sigue (desde "CONTEXTO") en una sesión nueva sobre el repo
 > `bd-core`. Es autocontenido: no necesita ver el repo del Agente.
 > El contrato descrito acá es el que el Agente **ya implementa** en la rama
-> `claude/farm-agent-independence-dsa8iq` (v3.0.0).
+> `claude/farm-agent-independence-dsa8iq` (v3.0.1).
 
 ---
 
@@ -90,7 +90,7 @@ su cola registros que vos no guardaste y se pierden para siempre.
   "registros": 12,
   "mensaje": "12 enviados",
   "agente_ts": "2026-08-12T09:00:00-03:00",
-  "version_agente": "3.0.0",
+  "version_agente": "3.0.1",
   "hostname": "gw-astillas",
   "zona_horaria": "America/Argentina/Buenos_Aires",
   "origen_alcanzable": true,
@@ -182,7 +182,7 @@ implementa el lado cliente; falta el endpoint:
 
     GET <base>/v1/agente/version
     Authorization: Bearer <token de la granja>
-    X-Agente-Version: 3.0.0
+    X-Agente-Version: 3.0.1
     X-Agente-Granja: astillas_de_plata
     X-Agente-Plataforma: windows-exe
 

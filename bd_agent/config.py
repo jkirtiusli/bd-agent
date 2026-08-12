@@ -28,6 +28,20 @@ class ErrorConfig(Exception):
     """Config ausente, ilegible o incompleta."""
 
 
+def citar_yaml(valor):
+    """
+    Cita un valor para YAML con COMILLA SIMPLE.
+
+    Importa para las rutas de Windows: entre comillas dobles, YAML interpreta
+    la barra invertida como escape, asi que
+        ruta_csv: "C:\\Users\\PC\\..."
+    revienta con "expected escape sequence of 8 hexadecimal numbers" al llegar
+    a \\U. Entre comillas simples no se interpreta nada; el unico caracter
+    especial es la comilla simple, que se duplica.
+    """
+    return "'" + str(valor).replace("'", "''") + "'"
+
+
 def cargar(ruta):
     """Lee el YAML, aplica defaults y resuelve el token. Devuelve el dict."""
     try:
