@@ -11,9 +11,10 @@ centinela: true            # avisa en el log si aparecen datos nuevos sin mapear
 
 # Cola local (store-and-forward). Es lo que hace que un corte de red no pierda
 # datos: lo leido se guarda en disco y se entrega cuando el Core vuelve.
-# Por defecto se crea al lado de este archivo.
-spool:
-  ruta: 'C:\farmapi\spool.db'
+# Por defecto se crea AL LADO de este archivo, que es lo que casi siempre
+# conviene. Descomentar solo para ponerla en otro lado.
+# spool:
+#   ruta: 'C:\farmapi\spool.db'
 
 destino:
   modo: "http"             # local_json | http  (produccion: http)

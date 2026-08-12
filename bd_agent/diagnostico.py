@@ -13,8 +13,7 @@ import urllib.error
 import urllib.request
 
 from bd_agent import __version__, config as bd_config
-from bd_agent import salud, spool as bd_spool
-from bd_agent.parser import parse_nombre_nave
+from bd_agent import origen as bd_origen, salud, spool as bd_spool
 
 OK, AVISO, MAL = "OK  ", "AVISO", "MAL "
 
@@ -44,31 +43,32 @@ def correr(ruta_config, imprimir=print):
 
     peor = bd_config.EXIT_OK
 
-    # 2. Origen de los CSV
+    # 2. Origen de los CSV — se valida parseando de verdad, no solo mirando
+    #    que la carpeta exista.
     ruta_csv = cfg["ruta_csv"]
-    est = salud.estado_origen(ruta_csv)
-    if not est["origen_alcanzable"]:
-        imprimir(_linea(MAL, "Origen", f"no se puede leer {ruta_csv} "
-                                       f"(¿el montaje SMB esta caido?)"))
+    informe = bd_origen.validar(ruta_csv)
+    if not informe["ok"]:
+        imprimir(_linea(MAL, "Origen", f"{ruta_csv} — {informe['motivo']}"))
+        imprimir(_linea(AVISO, "Solucion", "correr con --configurar para elegir "
+                                           "la carpeta con el explorador"))
         peor = bd_config.EXIT_ORIGEN
     else:
-        naves = [c for c in sorted(os.listdir(ruta_csv))
-                 if os.path.isdir(os.path.join(ruta_csv, c))
-                 and parse_nombre_nave(c)[0]]
-        no_reconocidas = est["galpones_vistos"] - len(naves)
-        imprimir(_linea(OK, "Origen", f"{ruta_csv} — {len(naves)} naves reconocidas"))
+        imprimir(_linea(OK, "Origen", f"{ruta_csv} — {len(informe['naves'])} galpones, "
+                                      f"{informe['csv_totales']} archivos"))
+        imprimir(_linea(OK, "Lectura", f"{informe['naves'][0]}: {informe['registros']} "
+                                       f"registros, {len(informe['metricas'])} metricas, "
+                                       f"dato mas nuevo {informe['fecha_mas_nueva']}"))
+        est = salud.estado_origen(ruta_csv)
+        no_reconocidas = est["carpetas_totales"] - est["galpones_vistos"]
         if no_reconocidas > 0:
             imprimir(_linea(AVISO, "Naves", f"{no_reconocidas} carpetas no matchean "
                                             f"MANBD_Plc*_House*_<ciclo>"))
-        frescura = est["fuente_frescura_seg"]
-        if frescura is None:
-            imprimir(_linea(MAL, "Frescura", "no hay ningun archivo en las carpetas"))
-            peor = peor or bd_config.EXIT_ORIGEN
-        elif frescura > 6 * 3600:
+        frescura = informe["frescura_seg"]
+        if frescura is not None and frescura > 6 * 3600:
             imprimir(_linea(AVISO, "Frescura", f"el CSV mas nuevo tiene {frescura // 3600} h "
                                                f"— BD-Copy podria no estar exportando"))
         else:
-            imprimir(_linea(OK, "Frescura", f"CSV mas nuevo hace {frescura // 60} min"))
+            imprimir(_linea(OK, "Frescura", f"CSV mas nuevo hace {(frescura or 0) // 60} min"))
 
     # 3. Cola local
     ruta_spool = cfg["spool"]["ruta"]
@@ -104,8 +104,11 @@ def _probar_core(cfg, imprimir):
     """Latido de prueba: valida DNS, TLS, token y reloj de una sola vez."""
     destino = cfg["destino"]
     url = salud._url_heartbeat(destino["url"])
+    # Se manda el latido completo, no uno pelado: asi el Core recibe siempre la
+    # misma forma de payload y el diagnostico queda registrado con contexto.
+    extra = dict(salud.reunir_extra(cfg), prueba=True)
     body = salud._construir_body(cfg, ok=True, registros=0,
-                                 mensaje="diagnostico", extra={"prueba": True})
+                                 mensaje="diagnostico", extra=extra)
     import json as _json
     req = urllib.request.Request(
         url, data=_json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST")

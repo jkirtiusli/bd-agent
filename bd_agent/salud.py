@@ -23,6 +23,7 @@ import datetime as dt
 import urllib.request
 
 from bd_agent import __version__
+from bd_agent.parser import parse_nombre_nave
 
 log = logging.getLogger("agente.salud")
 
@@ -59,14 +60,21 @@ def estado_origen(ruta_csv):
 
     frescura_seg = antiguedad del archivo modificado mas recientemente. Si sube
     de unas horas, BD-Copy dejo de exportar aunque el gateway este perfecto.
+
+    galpones_vistos cuenta solo las carpetas RECONOCIDAS como galpon. Cero
+    galpones con la carpeta existiendo = la ruta apunta al lugar equivocado,
+    que es distinto de "no hay datos nuevos" y merece alerta propia.
     """
     if not ruta_csv or not os.path.isdir(ruta_csv):
         return {"origen_alcanzable": False, "fuente_frescura_seg": None,
-                "galpones_vistos": 0}
-    mas_nuevo, galpones = None, 0
+                "galpones_vistos": 0, "carpetas_totales": 0}
+    mas_nuevo, galpones, carpetas = None, 0, 0
     try:
         for carpeta in os.scandir(ruta_csv):
             if not carpeta.is_dir():
+                continue
+            carpetas += 1
+            if not parse_nombre_nave(carpeta.name)[0]:
                 continue
             galpones += 1
             for arch in os.scandir(carpeta.path):
@@ -78,10 +86,10 @@ def estado_origen(ruta_csv):
     except OSError as e:
         log.warning(f"[salud] no se pudo recorrer {ruta_csv}: {e}")
         return {"origen_alcanzable": False, "fuente_frescura_seg": None,
-                "galpones_vistos": galpones}
+                "galpones_vistos": galpones, "carpetas_totales": carpetas}
     frescura = None if mas_nuevo is None else int(max(0, dt.datetime.now().timestamp() - mas_nuevo))
     return {"origen_alcanzable": True, "fuente_frescura_seg": frescura,
-            "galpones_vistos": galpones}
+            "galpones_vistos": galpones, "carpetas_totales": carpetas}
 
 
 def disco_libre_mb(ruta):

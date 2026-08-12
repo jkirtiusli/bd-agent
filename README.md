@@ -17,9 +17,41 @@ Cada registro tiene una `clave` deterministica —
 como identidad para hacer UPSERT. Lo ya confirmado no se vuelve a mandar, salvo
 que cambie el valor rio arriba.
 
+Unica dependencia: **pyyaml**. Los CSV se leen con la stdlib.
+
 ## Instalacion
 
-### A) Gateway Linux (recomendado para produccion)
+### A) Windows con el .exe (lo mas simple)
+
+No necesita Python instalado. Un solo archivo de ~10 MB.
+
+1. Bajar `agente-bdcopy.exe` de la ultima Release y copiarlo a `C:\farmapi\`.
+2. Doble clic en `configurar.bat` — o:
+
+       agente-bdcopy.exe --config config.yaml --configurar
+
+   Busca sola la carpeta de BD-Copy, y si no la encuentra abre el **explorador
+   de carpetas** de Windows. Antes de guardar, **lee los archivos de verdad** y
+   muestra cuantos galpones, que metricas y de que fecha encontro. Si la carpeta
+   no sirve, lo dice y pide otra.
+3. Editar `config.yaml`: `granja` y el token.
+4. Verificar:
+
+       agente-bdcopy.exe --config config.yaml --diagnostico
+
+5. Instalar la tarea programada (clic derecho -> **Ejecutar como administrador**):
+
+       scripts\instalar_tarea.bat
+
+Corre **cada hora**, como **SYSTEM** (no necesita usuario logueado) y con
+`StartWhenAvailable`: si la PC estuvo apagada, recupera la corrida apenas
+enciende.
+
+> Si la carpeta de BD-Copy esta en OneDrive, marcarla como **"Conservar siempre
+> en este dispositivo"**. SYSTEM no puede bajar archivos que quedaron solo en la
+> nube.
+
+### B) Gateway Linux (recomendado para produccion)
 
     sudo ./scripts/instalar_gateway.sh \
         --granja astillas_de_plata \
@@ -37,34 +69,17 @@ Deja instalados dos timers de systemd:
 Falta a mano, una sola vez: montar la carpeta de CSV por SMB **en solo lectura**
 e instalar Tailscale (`tailscale up --ssh`). El script imprime ambos comandos.
 
-### B) PC de Windows (la de BD-Copy)
+### C) Desde el codigo
 
-    git clone <URL_DEL_REPO> C:\farmapi\agente
-    cd C:\farmapi\agente
     pip install -r requirements.txt
-    copy bd_agent\config_ejemplo.yaml config.yaml     REM editar granja, ruta_csv, token
-
-Probar:
-
-    python -m bd_agent.agente --config config.yaml --diagnostico
-    python -m bd_agent.agente --config config.yaml --once
-
-Instalar la tarea programada (clic derecho -> **Ejecutar como administrador**):
-
-    scripts\instalar_tarea.bat
-
-Corre **cada hora**, como **SYSTEM** (no necesita usuario logueado) y con
-`StartWhenAvailable`: si la PC estuvo apagada, recupera la corrida apenas
-enciende.
-
-> Si la carpeta de BD-Copy esta en OneDrive, marcarla como **"Conservar siempre
-> en este dispositivo"**. SYSTEM no puede bajar archivos que quedaron solo en la
-> nube.
+    copy bd_agent\config_ejemplo.yaml config.yaml
+    python -m bd_agent.agente --config config.yaml --configurar
 
 ## Comandos
 
 | Comando | Para que |
 |---|---|
+| `--configurar` | asistente para elegir la carpeta de BD-Copy (con explorador) |
 | `--once` | una corrida (lo que usan systemd y la tarea programada) |
 | `--diagnostico` | revisa config, origen, frescura de los CSV, cola, Core, token y reloj |
 | `--solo-heartbeat` | reporta estado al Core sin leer los CSV |
@@ -93,6 +108,9 @@ Ese ultimo campo distingue dos fallas que si no se ven iguales (silencio):
     no llega ningun latido          -> el gateway se cayo
     latido con frescura alta        -> el gateway esta bien, BD-Copy no exporta
 
+Y `galpones_vistos == 0` con la carpeta existiendo significa que la ruta apunta
+al lugar equivocado — distinto de "hoy no hubo datos nuevos", y con su alerta.
+
 La deteccion de "esta granja se murio" vive en el Core (dead-man's switch): si
 el agente no corre, no hay latido que avisarlo.
 
@@ -105,6 +123,20 @@ Editar `bd_agent/metricas.py` -> diccionario `CANONICAS`.
     granja, galpon, ciclo, metrica, fecha_dato, hora_cierre,
     zona_horaria, capturado_en, valor, edad_dia, semana, fuente, clave
 
-## Tests
+## Desarrollo
 
+    pip install -r requirements-dev.txt
     python -m pytest tests/ -q
+
+### Construir el .exe
+
+PyInstaller **no compila cruzado**: el `.exe` hay que construirlo en Windows.
+
+- En una PC Windows: `powershell -File scripts\construir_exe.ps1`
+- Sin PC Windows: pushear un tag `v*` y lo construye
+  `.github/workflows/exe.yml` en un runner de GitHub, publicando el `.exe` en
+  una Release.
+
+La receta es `agente-bdcopy.spec`. Los `excludes` de ahi son los que mantienen
+el ejecutable en ~10 MB: sin ellos PyInstaller empaqueta cualquier libreria
+pesada que encuentre instalada en la maquina que construye.

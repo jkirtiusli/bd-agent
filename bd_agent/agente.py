@@ -18,6 +18,7 @@ from bd_agent import config as bd_config
 from bd_agent import parser as bd_parser
 from bd_agent import destino as bd_destino
 from bd_agent import diagnostico as bd_diagnostico
+from bd_agent import origen as bd_origen
 from bd_agent import salud
 from bd_agent import spool as bd_spool
 
@@ -84,6 +85,12 @@ def _entrega_al_core(cfg, registros, sp, log):
     origen_ok = extra.get("origen_alcanzable", True)
     if not origen_ok:
         msg = f"no se puede leer el origen {cfg['ruta_csv']} — {msg}"
+    elif not extra.get("galpones_vistos", 1):
+        # La carpeta existe pero no tiene ningun galpon: la ruta apunta al
+        # lugar equivocado. Sin esto se ve igual que "no hay datos nuevos".
+        origen_ok = False
+        msg = (f"la carpeta {cfg['ruta_csv']} no tiene ningun galpon "
+               f"(se esperan subcarpetas MANBD_Plc*_House*) — {msg}")
 
     ok = quedan == 0 and origen_ok
     (log.info if ok else log.error)(msg)
@@ -125,6 +132,8 @@ def main(argv=None):
                     help="una sola corrida (lo que usan systemd / la tarea programada)")
     ap.add_argument("--diagnostico", action="store_true",
                     help="revisa config, origen, cola, Core y reloj; no entrega datos")
+    ap.add_argument("--configurar", action="store_true",
+                    help="asistente para elegir la carpeta de BD-Copy (con explorador)")
     ap.add_argument("--solo-heartbeat", action="store_true",
                     help="reporta estado al Core sin leer los CSV")
     ap.add_argument("--reenviar-desde", metavar="AAAA-MM-DD",
@@ -140,6 +149,11 @@ def main(argv=None):
 
     if not args.config:
         ap.error("--config es obligatorio")
+
+    # Va antes de cargar la config: el asistente sirve justamente para cuando
+    # todavia no hay una config valida.
+    if args.configurar:
+        return bd_origen.configurar_interactivo(args.config)
 
     if args.diagnostico:
         return bd_diagnostico.correr(args.config)

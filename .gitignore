@@ -23,5 +23,11 @@ __pycache__/
 .venv/
 venv/
 
+# Empaquetado del .exe (agente-bdcopy.spec SI se versiona)
+build/
+dist/
+.venv-build/
+*.manifest
+
 # Logs
 *.log

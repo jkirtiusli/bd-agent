@@ -1,0 +1,67 @@
+name: Construir el .exe de Windows
+
+# PyInstaller no compila cruzado: el .exe hay que construirlo en Windows.
+# Este workflow lo hace en un runner de GitHub, asi no hace falta tener una PC
+# Windows a mano ni construir a mano en la granja.
+#
+#   push de un tag v*  -> publica el .exe en una Release descargable
+#   ejecucion manual   -> deja el .exe como artifact por 30 dias
+#   PR / push a master -> solo verifica que siga compilando
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # necesario para crear la Release
+
+jobs:
+  construir:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest tests/ -q
+
+      - name: Construir
+        run: python -m PyInstaller --clean --noconfirm agente-bdcopy.spec
+
+      - name: Humo — que el ejecutable arranque
+        run: |
+          .\dist\agente-bdcopy.exe --version
+          .\dist\agente-bdcopy.exe --help
+
+      - name: Tamaño
+        shell: pwsh
+        run: |
+          $mb = [math]::Round((Get-Item .\dist\agente-bdcopy.exe).Length / 1MB, 1)
+          Write-Host "agente-bdcopy.exe = $mb MB"
+          # Sin pandas tiene que quedar chico. Si esto salta, se colo una
+          # dependencia pesada: revisar `excludes` en agente-bdcopy.spec.
+          if ($mb -gt 30) { throw "el .exe engordo a $mb MB (esperado < 30)" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agente-bdcopy-exe
+          path: dist/agente-bdcopy.exe
+          retention-days: 30
+
+      - name: Publicar la Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/agente-bdcopy.exe
+          generate_release_notes: true

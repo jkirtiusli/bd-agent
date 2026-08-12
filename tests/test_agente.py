@@ -12,8 +12,12 @@ from bd_agent import spool as bd_spool
 LOG = logging.getLogger("test")
 
 
-def cfg_http(tmp_path):
-    return {"granja": "g", "zona_horaria": "UTC", "ruta_csv": str(tmp_path),
+def cfg_http(tmp_path, con_galpon=True):
+    csv = tmp_path / "csv"
+    csv.mkdir(exist_ok=True)
+    if con_galpon:
+        (csv / "MANBD_Plc1_HouseA_7").mkdir(exist_ok=True)
+    return {"granja": "g", "zona_horaria": "UTC", "ruta_csv": str(csv),
             "destino": {"modo": "http", "url": "https://core.test/ingest",
                         "token": "t", "lote": 100},
             "spool": {"ruta": str(tmp_path / "spool.db")}}
@@ -100,6 +104,23 @@ def test_origen_caido_no_reporta_verde(tmp_path, monkeypatch):
     r = agente.ciclo_trabajo(cfg, LOG)
     assert r.ok is False and r.codigo == bd_config.EXIT_ORIGEN
     assert reportes[0][0] is False and "no se puede leer el origen" in reportes[0][1]
+
+
+def test_carpeta_sin_galpones_no_reporta_verde(tmp_path, monkeypatch):
+    """
+    La ruta apunta al lugar equivocado (eligieron la carpeta padre). La carpeta
+    existe, asi que 'alcanzable' da True — pero no hay ni un galpon. Sin este
+    chequeo se ve identico a "hoy no hubo datos nuevos".
+    """
+    reportes = []
+    monkeypatch.setattr(agente.salud, "reportar",
+                        lambda cfg, ok, registros, mensaje, extra=None:
+                        reportes.append((ok, mensaje)))
+    monkeypatch.setattr(agente.bd_destino, "drenar",
+                        lambda sp, dest, dormir=None: (0, 0, "0 enviados"))
+    r = agente.ciclo_trabajo(cfg_http(tmp_path, con_galpon=False), LOG)
+    assert r.ok is False and r.codigo == bd_config.EXIT_ORIGEN
+    assert reportes[0][0] is False and "ningun galpon" in reportes[0][1]
 
 
 def test_cola_se_drena_aunque_el_origen_este_caido(tmp_path, monkeypatch):
