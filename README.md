@@ -84,9 +84,52 @@ e instalar Tailscale (`tailscale up --ssh`). El script imprime ambos comandos.
 | `--diagnostico` | revisa config, origen, frescura de los CSV, cola, Core, token y reloj |
 | `--solo-heartbeat` | reporta estado al Core sin leer los CSV |
 | `--reenviar-desde AAAA-MM-DD` | vuelve a encolar lo ya confirmado desde esa fecha |
+| `--actualizar` | busca version nueva, la verifica y se reemplaza |
+| `--actualizar --revisar` | solo informa si hay version nueva |
+| `--revertir` | vuelve a la version anterior guardada |
 | `--version` | version del agente (tambien viaja en cada latido) |
 
 Codigos de salida: `0` ok · `2` config · `3` origen (CSV) · `4` red/Core · `5` token.
+
+## Auto-actualizacion (pull)
+
+El Agente le pregunta al Core si hay version nueva y se actualiza solo. Nadie
+en la granja tiene que hacer nada.
+
+**Por que pull y no push:** mandarle el archivo a alguien para que lo ejecute
+reintroduce justo la dependencia que este proyecto viene a eliminar — que una
+persona en la granja haga algo. Con pull, se publica una version y la flota
+converge sola.
+
+**Por que el canal es el Core y no GitHub:** el Core ya sabe que version tiene
+cada granja, asi que permite **canario de verdad** (actualizar una granja
+primero) y fijar la version de una granja sin tocar nada en la granja.
+
+Antes de reemplazar nada se verifica, en este orden:
+
+1. la URL es HTTPS y el manifiesto declara `sha256`
+2. lo bajado no supera el tope de tamano
+3. el `sha256` de lo bajado coincide
+4. lo bajado **arranca** y reporta la version esperada
+
+Recien ahi se corre el ejecutable actual a `.viejo` y se pone el nuevo. Si el
+nuevo no arranca **se revierte solo**. `--revertir` es el boton de panico.
+
+Nunca baja de version, salvo que el Core mande `version_fijada` — que es como
+se revierte una flota entera sin entrar a ninguna granja.
+
+    actualizacion:
+      modo: "manual"          # manual | automatica
+      # version_fijada: ""    # clava esta granja en una version
+      max_mb: 60
+
+Arranca en `manual`: el timer consulta pero no instala. Se pasa a `automatica`
+en **una** granja (canario), se mira 24 h en el tablero, y recien despues en el
+resto. El resultado de la ultima actualizacion viaja en el latido, asi que una
+granja trabada se ve desde el tablero.
+
+En Linux corre `bd-agent-update.timer` (03:30, con una hora de dispersion); en
+Windows, la tarea `AgenteBDCopy-Update`.
 
 ## El token
 

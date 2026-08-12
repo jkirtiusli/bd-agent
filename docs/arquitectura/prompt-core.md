@@ -175,11 +175,64 @@ cuántos galpones y qué métricas se esperan, y alertá si para la fecha de aye
 falta alguno. Un galpón que dejó de reportar hace tres días con el resto en
 verde es exactamente el error que hoy no se detecta.
 
-**6. Vista de flota**
+**6. Canal de actualización de los Agentes**
+
+El Agente v3 se auto-actualiza **por pull**, y el canal sos vos, no GitHub. Ya
+implementa el lado cliente; falta el endpoint:
+
+    GET <base>/v1/agente/version
+    Authorization: Bearer <token de la granja>
+    X-Agente-Version: 3.0.0
+    X-Agente-Granja: astillas_de_plata
+    X-Agente-Plataforma: windows-exe
+
+Respuesta `200`:
+
+```json
+{
+  "version": "3.1.0",
+  "notas": "arregla el parseo de filas largas",
+  "paquetes": {
+    "ejecutable":  {"url": "https://.../agente-bdcopy.exe", "sha256": "9f2a..."},
+    "fuente_tar":  {"url": "https://.../v3.1.0.tar.gz",     "sha256": "1b7c..."}
+  },
+  "version_fijada": null
+}
+```
+
+Devolvé `204` si esa granja no tiene que hacer nada. `404` también es válido
+mientras no lo implementes: el Agente lo toma como "no hay canal" y sigue
+normal, sin ruido en los logs.
+
+Por qué el canal es el Core y no GitHub directo: **vos decidís qué granja
+actualiza y cuándo.** Eso permite canario de verdad — le devolvés `3.1.0` a una
+sola granja, mirás 24 h en el tablero (el Agente reporta `version_agente` y
+`ultima_actualizacion` en cada latido), y recién ahí se lo devolvés al resto. Y
+si algo sale mal, `version_fijada: "3.0.0"` revierte la flota entera **sin
+entrar a ninguna granja** — el Agente aplica una versión fijada aunque sea más
+vieja que la instalada.
+
+Lo que quiero del lado tuyo:
+- La versión objetivo configurable **por granja**, con un default para el resto.
+- `ejecutable` es el paquete para quien corre el `.exe`; `fuente_tar` para el
+  gateway Linux, que corre desde código. `X-Agente-Plataforma` te dice cuál
+  necesita cada granja (`windows-exe`, `linux-fuente`).
+- Los `sha256` calculados de verdad sobre los archivos publicados. El Agente
+  rechaza el paquete si no coincide, y rechaza el manifiesto si no trae sha256.
+- Las URLs tienen que ser HTTPS (el Agente rechaza `http://`).
+- Registrá qué granja consultó y qué se le respondió: es el rastro para saber
+  por qué una granja no converge.
+
+Con eso el ciclo completo es: pusheás un tag → GitHub Actions publica el `.exe`
+→ cargás versión + sha256 en el Core → la granja canario se actualiza sola esa
+madrugada → mirás el tablero → abrís al resto.
+
+**7. Vista de flota**
 `GET /v1/agente/estado`: una fila por granja con semáforo, último latido, fecha
 del último dato, versión del agente, pendientes en cola, galpones esperados vs
-recibidos y último error. Es el tablero que miro a la mañana. Si el proyecto ya
-tiene frontend, una página; si no, JSON alcanza para arrancar.
+recibidos, resultado de la última actualización y último error. Es el tablero
+que miro a la mañana. Si el proyecto ya tiene frontend, una página; si no, JSON
+alcanza para arrancar.
 
 ---
 

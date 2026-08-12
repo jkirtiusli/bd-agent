@@ -14,6 +14,7 @@ import argparse
 from collections import namedtuple
 
 from bd_agent import __version__
+from bd_agent import actualizacion as bd_actualizacion
 from bd_agent import config as bd_config
 from bd_agent import parser as bd_parser
 from bd_agent import destino as bd_destino
@@ -138,6 +139,14 @@ def main(argv=None):
                     help="reporta estado al Core sin leer los CSV")
     ap.add_argument("--reenviar-desde", metavar="AAAA-MM-DD",
                     help="vuelve a encolar todo lo confirmado desde esa fecha")
+    ap.add_argument("--actualizar", action="store_true",
+                    help="busca version nueva en el canal, la verifica y se reemplaza")
+    ap.add_argument("--revisar", action="store_true",
+                    help="con --actualizar: solo informa, no instala nada")
+    ap.add_argument("--desatendido", action="store_true",
+                    help="con --actualizar: lo corre el timer, respeta actualizacion.modo")
+    ap.add_argument("--revertir", action="store_true",
+                    help="vuelve a la version anterior guardada")
     ap.add_argument("--log-nivel", default="INFO",
                     choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     ap.add_argument("--version", action="version", version=f"agente-bd-copy {__version__}")
@@ -171,6 +180,23 @@ def main(argv=None):
         with bd_spool.Spool(cfg["spool"]["ruta"]) as sp:
             n = sp.reencolar_desde(args.reenviar_desde)
         log.info(f"{n} registros reencolados desde {args.reenviar_desde}")
+        return bd_config.EXIT_OK
+
+    if args.revertir:
+        try:
+            destino = bd_actualizacion.revertir()
+        except bd_actualizacion.ErrorActualizacion as e:
+            log.error(f"no se pudo revertir: {e}")
+            return bd_config.EXIT_ERROR
+        log.info(f"revertido a la version anterior en {destino}")
+        return bd_config.EXIT_OK
+
+    if args.actualizar:
+        # Una actualizacion que falla NO es un incidente de datos: se reporta
+        # y se sigue. Por eso nunca devuelve codigo de error.
+        _cambio, mensaje = bd_actualizacion.actualizar(
+            cfg, log, revisar=args.revisar, desatendido=args.desatendido)
+        log.info(mensaje)
         return bd_config.EXIT_OK
 
     if args.solo_heartbeat:

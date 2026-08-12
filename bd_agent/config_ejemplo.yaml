@@ -41,3 +41,17 @@ destino:
   backoff_base: 1.0        # segundos; duplica en cada intento (con jitter)
   backoff_tope: 60.0
   timeout: 60
+
+# ===== Auto-actualizacion (pull) =====
+# El Agente le pregunta al Core si hay version nueva, la baja, verifica el
+# sha256, comprueba que ARRANQUE y recien ahi se reemplaza. Si la nueva no
+# arranca, vuelve sola a la anterior.
+actualizacion:
+  modo: "manual"           # manual | automatica
+                           # manual: solo si alguien corre --actualizar
+                           # automatica: el timer instala solo. Empezar por UNA
+                           # granja (canario) antes de abrirlo a la flota.
+  # url: ""                # por defecto se deriva del Core:
+                           #   .../ingest -> .../v1/agente/version
+  # version_fijada: ""     # clava esta granja en una version (permite BAJAR)
+  max_mb: 60               # tope de descarga

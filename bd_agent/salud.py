@@ -110,6 +110,13 @@ def reunir_extra(cfg, spool=None):
             extra.update(spool.estado())
         except Exception as e:  # la cola no puede tumbar el latido
             log.warning(f"[salud] no se pudo leer el estado de la cola: {e}")
+    try:
+        # Resultado de la ultima actualizacion: asi se ve desde el tablero si
+        # una granja quedo trabada intentando actualizarse.
+        from bd_agent import actualizacion
+        extra["ultima_actualizacion"] = actualizacion.leer_estado(cfg)
+    except Exception as e:
+        log.warning(f"[salud] no se pudo leer el estado de actualizacion: {e}")
     return extra
 
 

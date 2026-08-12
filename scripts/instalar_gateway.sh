@@ -79,6 +79,12 @@ destino:
   lote: 2000
   reintentos: 5
   timeout: 60
+
+actualizacion:
+  # "manual" hasta que el circuito este probado. Con "automatica" el timer de
+  # las 03:30 instala solo lo que publique el Core. Empezar por UNA granja.
+  modo: "manual"
+  # version_fijada: "3.0.0"   # clava esta granja en una version
 YAML
   chown root:"$USUARIO" "$ETC/config.yaml"
   chmod 0640 "$ETC/config.yaml"
@@ -93,7 +99,7 @@ echo ">> Servicios y timers"
 cp "$REPO"/scripts/systemd/bd-agent*.service "$REPO"/scripts/systemd/bd-agent*.timer \
    /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now bd-agent.timer bd-agent-heartbeat.timer
+systemctl enable --now bd-agent.timer bd-agent-heartbeat.timer bd-agent-update.timer
 
 echo ">> Actualizaciones de seguridad automaticas"
 apt-get install -y -qq unattended-upgrades >/dev/null

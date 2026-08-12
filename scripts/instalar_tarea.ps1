@@ -62,9 +62,33 @@ Register-ScheduledTask -TaskName $Nombre -Force `
     -Settings $config -Principal $principal `
     -Description "Agente BD-Copy: lee los CSV, encola y entrega al Core." | Out-Null
 
+# --- Tarea de auto-actualizacion (una vez por dia, de madrugada) ---
+# Va aparte del ciclo de datos: una actualizacion que falla no puede frenar la
+# entrega. Respeta actualizacion.modo del config, que arranca en "manual".
+$exe = Join-Path $repo "agente-bdcopy.exe"
+if (Test-Path $exe) {
+    $accionAct = New-ScheduledTaskAction -Execute $exe `
+        -Argument "--config `"$Config`" --actualizar --desatendido" -WorkingDirectory $repo
+} else {
+    $accionAct = New-ScheduledTaskAction -Execute "python" `
+        -Argument "-m bd_agent.agente --config `"$Config`" --actualizar --desatendido" `
+        -WorkingDirectory $repo
+}
+# Minuto aleatorio para que la flota no se actualice toda junta: si una version
+# rompe algo, rompe de a poco y da tiempo a frenarla.
+$minuto = Get-Random -Minimum 0 -Maximum 59
+$dispAct = New-ScheduledTaskTrigger -Daily -At ("03:{0:d2}" -f $minuto)
+
+Register-ScheduledTask -TaskName "$Nombre-Update" -Force `
+    -Action $accionAct -Trigger $dispAct `
+    -Settings $config -Principal $principal `
+    -Description "Agente BD-Copy: busca e instala actualizaciones." | Out-Null
+
 Write-Host ""
 Write-Host "OK: tarea '$Nombre' creada." -ForegroundColor Green
 Write-Host "    Corre cada $CadaMin min, como SYSTEM, y recupera corridas perdidas."
+Write-Host "OK: tarea '$Nombre-Update' creada (03:$('{0:d2}' -f $minuto))." -ForegroundColor Green
+Write-Host "    Solo instala si actualizacion.modo esta en 'automatica'."
 Write-Host ""
 Write-Host "OJO con OneDrive: si la carpeta de BD-Copy esta en OneDrive, marcarla"
 Write-Host "como 'Conservar siempre en este dispositivo'. SYSTEM no puede bajar"

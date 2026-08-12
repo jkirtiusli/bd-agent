@@ -70,6 +70,17 @@ def cargar(ruta):
 
     cfg["spool"] = cfg.get("spool") or {}
     cfg["spool"].setdefault("ruta", ruta_spool_por_defecto(cfg))
+
+    # Auto-actualizacion. Por defecto MANUAL: el timer consulta pero no aplica
+    # hasta que se pase a "automatica". Se empieza por una granja (canario) y
+    # recien despues se abre a la flota.
+    cfg["actualizacion"] = cfg.get("actualizacion") or {}
+    cfg["actualizacion"].setdefault("modo", "manual")
+    cfg["actualizacion"].setdefault("max_mb", 60)
+    modo = cfg["actualizacion"]["modo"]
+    if modo not in ("manual", "automatica"):
+        raise ErrorConfig(f"actualizacion.modo desconocido: {modo} "
+                          f"(esperado manual | automatica)")
     return cfg
 
 

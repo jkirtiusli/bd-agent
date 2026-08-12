@@ -1,0 +1,19 @@
+[Unit]
+Description=Busca actualizaciones del Agente BD-Copy una vez por dia
+Documentation=https://github.com/jkirtiusli/bd-agent
+
+[Timer]
+# De madrugada: si una version nueva sale mal, el dia arranca con la alerta
+# puesta y con margen para revertir antes de la corrida importante.
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+# Una hora de dispersion: que la flota entera no se actualice en el mismo
+# minuto. Si una version rompe algo, rompe de a poco y da tiempo a frenarla.
+RandomizedDelaySec=3600
+
+AccuracySec=1min
+Unit=bd-agent-update.service
+
+[Install]
+WantedBy=timers.target
