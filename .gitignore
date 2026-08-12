@@ -7,6 +7,16 @@ datos_normalizados.json
 *.json
 !package*.json
 
+# Cola local (store-and-forward): datos de la granja, nunca al repo
+spool.db
+*.db
+*.db-wal
+*.db-shm
+
+# Token de ingesta
+token.txt
+*.cred
+
 # Python
 __pycache__/
 *.pyc

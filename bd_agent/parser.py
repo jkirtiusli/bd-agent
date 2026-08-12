@@ -8,10 +8,13 @@ Parser + normalizador BD-Copy -> modelo canonico (v2).
 """
 import os
 import re
+import logging
 import datetime as dt
 import pandas as pd
 
 from bd_agent.metricas import CANONICAS, ARCHIVOS_CONOCIDOS
+
+log = logging.getLogger("agente.parser")
 
 _RE_NAVE = re.compile(r"MANBD_(Plc\d+_House\w+?)_(\d+)$", re.IGNORECASE)
 _RE_FECHA = re.compile(r"\d{2}\.\d{2}\.\d{4}")
@@ -28,7 +31,19 @@ def _hora_cierre(time_str):
     return m.group(1) if m else None
 
 def _leer_df(ruta):
-    df = pd.read_csv(ruta, sep="\t", encoding="latin-1", engine="python", on_bad_lines="skip")
+    """
+    Un archivo ilegible no puede tumbar la corrida entera.
+
+    Pasa de verdad: BD-Copy escribiendo el CSV justo cuando el agente lo lee,
+    un archivo truncado por un corte de luz, o encoding roto. Antes, cualquiera
+    de esos casos propagaba la excepcion y se perdian TODOS los galpones.
+    """
+    try:
+        df = pd.read_csv(ruta, sep="\t", encoding="latin-1",
+                         engine="python", on_bad_lines="skip")
+    except Exception as e:  # pandas tira EmptyDataError, ParserError, UnicodeError...
+        log.warning(f"[parser] no se pudo leer {os.path.basename(ruta)}: {e}")
+        return None
     if "DATE" not in df.columns:
         return None
     df = df[df["DATE"].astype(str).str.match(_RE_FECHA)].copy()
@@ -91,7 +106,7 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
 
     # Centinela: archivos con datos que NO estan en la lista canonica
     aviso = []
-    for arch in os.listdir(ruta_nave):
+    for arch in sorted(os.listdir(ruta_nave)):
         if not arch.lower().endswith(".csv") or arch in ARCHIVOS_CONOCIDOS:
             continue
         df = _leer_df(os.path.join(ruta_nave, arch))
@@ -112,7 +127,12 @@ def escanear(base_csv, granja, zona_horaria, hoy=None):
         galpon, _ = parse_nombre_nave(carpeta)
         if not galpon:
             continue
-        regs, aviso = procesar_nave(ruta_nave, granja, zona_horaria, hoy=hoy)
+        try:
+            regs, aviso = procesar_nave(ruta_nave, granja, zona_horaria, hoy=hoy)
+        except Exception as e:
+            # Un galpon roto no puede hacer perder los otros siete.
+            log.error(f"[parser] fallo el galpon {carpeta}: {e}")
+            continue
         salida.extend(regs)
         if aviso:
             avisos[carpeta] = aviso

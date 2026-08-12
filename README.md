@@ -4,29 +4,107 @@ Agente que lee los CSV exportados por BD-Copy (Big Dutchman), los normaliza
 a un modelo canonico y los entrega a un destino (archivo local o API).
 Disenado para instalarse identico en multiples granjas.
 
-## Instalacion en una granja
+## Como funciona (v3)
 
-1. Clonar el repo:
-       git clone <URL_DEL_REPO> C:\farmapi\agente
-       cd C:\farmapi\agente
+    leer CSV  ->  encolar en disco (SQLite)  ->  drenar contra el Core
 
-2. Instalar dependencias:
-       pip install -r requirements.txt
+La cola es lo importante: si el Core esta caido o no hay internet, los
+registros quedan guardados y se entregan en la proxima corrida. **Una corrida
+fallida cuesta minutos, no un dia de datos.**
 
-3. Crear la config de esta granja (NO se sube al repo):
-       copy bd_agent\config_ejemplo.yaml config.yaml
-   Editar config.yaml: ajustar granja, zona_horaria y ruta_csv.
-   Para empujar al Core, dejar destino.modo: "http" y
-   destino.url: "https://core.flowkore.com/ingest" (token = el de ingesta).
+Cada registro tiene una `clave` deterministica —
+`sha256(granja|galpon|ciclo|metrica|fecha_dato)`— que viaja al Core y le sirve
+como identidad para hacer UPSERT. Lo ya confirmado no se vuelve a mandar, salvo
+que cambie el valor rio arriba.
 
-4. Probar:
-       python -m bd_agent.agente --config config.yaml --once
+## Instalacion
 
-5. (Mas adelante) instalar como servicio de Windows para corrida desatendida.
+### A) Gateway Linux (recomendado para produccion)
+
+    sudo ./scripts/instalar_gateway.sh \
+        --granja astillas_de_plata \
+        --url https://core.flowkore.com/ingest \
+        --origen /mnt/bdcopy/csv \
+        --token-file /root/token-astillas.txt
+
+Deja instalados dos timers de systemd:
+
+| Timer | Cada | Que hace |
+|---|---|---|
+| `bd-agent.timer` | 15 min | ciclo de datos, con `Persistent=true` (recupera corridas perdidas) |
+| `bd-agent-heartbeat.timer` | 5 min | latido al Core, aunque no haya datos nuevos |
+
+Falta a mano, una sola vez: montar la carpeta de CSV por SMB **en solo lectura**
+e instalar Tailscale (`tailscale up --ssh`). El script imprime ambos comandos.
+
+### B) PC de Windows (la de BD-Copy)
+
+    git clone <URL_DEL_REPO> C:\farmapi\agente
+    cd C:\farmapi\agente
+    pip install -r requirements.txt
+    copy bd_agent\config_ejemplo.yaml config.yaml     REM editar granja, ruta_csv, token
+
+Probar:
+
+    python -m bd_agent.agente --config config.yaml --diagnostico
+    python -m bd_agent.agente --config config.yaml --once
+
+Instalar la tarea programada (clic derecho -> **Ejecutar como administrador**):
+
+    scripts\instalar_tarea.bat
+
+Corre **cada hora**, como **SYSTEM** (no necesita usuario logueado) y con
+`StartWhenAvailable`: si la PC estuvo apagada, recupera la corrida apenas
+enciende.
+
+> Si la carpeta de BD-Copy esta en OneDrive, marcarla como **"Conservar siempre
+> en este dispositivo"**. SYSTEM no puede bajar archivos que quedaron solo en la
+> nube.
+
+## Comandos
+
+| Comando | Para que |
+|---|---|
+| `--once` | una corrida (lo que usan systemd y la tarea programada) |
+| `--diagnostico` | revisa config, origen, frescura de los CSV, cola, Core, token y reloj |
+| `--solo-heartbeat` | reporta estado al Core sin leer los CSV |
+| `--reenviar-desde AAAA-MM-DD` | vuelve a encolar lo ya confirmado desde esa fecha |
+| `--version` | version del agente (tambien viaja en cada latido) |
+
+Codigos de salida: `0` ok · `2` config · `3` origen (CSV) · `4` red/Core · `5` token.
+
+## El token
+
+No hace falta que este en el `config.yaml`. Se resuelve en este orden:
+
+1. `destino.token_file` — ruta a un archivo (`0600`). Con systemd:
+   `token_file: "${CREDENTIALS_DIRECTORY}/core_token"`
+2. `destino.token_env` — nombre de una variable de entorno
+3. `destino.token` — en linea (para probar)
+
+## Que reporta el latido
+
+Ademas de `ok` / `registros` / `mensaje`: `version_agente`, `hostname`,
+`pendientes_en_cola`, `ultimo_dato_fecha`, `galpones_vistos`, `disco_libre_mb`,
+`ultimo_error` y **`fuente_frescura_seg`** (antiguedad del CSV mas nuevo).
+
+Ese ultimo campo distingue dos fallas que si no se ven iguales (silencio):
+
+    no llega ningun latido          -> el gateway se cayo
+    latido con frescura alta        -> el gateway esta bien, BD-Copy no exporta
+
+La deteccion de "esta granja se murio" vive en el Core (dead-man's switch): si
+el agente no corre, no hay latido que avisarlo.
 
 ## Agregar una metrica
-Editar bd_agent/metricas.py -> diccionario CANONICAS.
+
+Editar `bd_agent/metricas.py` -> diccionario `CANONICAS`.
 
 ## Estructura del dato normalizado
-granja, galpon, ciclo, metrica, fecha_dato, hora_cierre,
-zona_horaria, capturado_en, valor, edad_dia, semana, fuente
+
+    granja, galpon, ciclo, metrica, fecha_dato, hora_cierre,
+    zona_horaria, capturado_en, valor, edad_dia, semana, fuente, clave
+
+## Tests
+
+    python -m pytest tests/ -q

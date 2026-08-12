@@ -2,14 +2,41 @@
 granja: "astillas_de_plata"
 zona_horaria: "America/Argentina/Buenos_Aires"   # misma para todas tus granjas
 
+# En la PC de BD-Copy: la carpeta local donde exporta.
+# En un gateway Linux: el punto de montaje SMB, en SOLO LECTURA.
 ruta_csv: 'C:\Users\PC\OneDrive\Escritorio\BDCopy\BackUp\csv'
-intervalo_segundos: 300
+
+intervalo_segundos: 900    # solo aplica al modo demonio (sin --once)
 centinela: true            # avisa en el log si aparecen datos nuevos sin mapear
+
+# Cola local (store-and-forward). Es lo que hace que un corte de red no pierda
+# datos: lo leido se guarda en disco y se entrega cuando el Core vuelve.
+# Por defecto se crea al lado de este archivo.
+spool:
+  ruta: 'C:\farmapi\spool.db'
 
 destino:
   modo: "http"             # local_json | http  (produccion: http)
-  ruta_salida: 'C:\farmapi\datos_normalizados.json'
+  ruta_salida: 'C:\farmapi\datos_normalizados.json'   # solo para local_json
+
   # url del /ingest del Core. El heartbeat se deriva de aca:
   #   .../ingest  ->  .../v1/agente/heartbeat
   url: "https://core.flowkore.com/ingest"
-  token: "PEGAR_TOKEN"     # CORE_INGEST_TOKEN (el mismo del Core)
+
+  # ---- El token: elegir UNA de las tres formas ----
+  # 1. Archivo aparte (recomendado; en Linux con permisos 0600).
+  #    Con systemd usar:  token_file: "${CREDENTIALS_DIRECTORY}/core_token"
+  # token_file: 'C:\farmapi\token.txt'
+  #
+  # 2. Variable de entorno.
+  # token_env: "CORE_INGEST_TOKEN"
+  #
+  # 3. En linea (comodo para probar; evitar en produccion).
+  token: "PEGAR_TOKEN"
+
+  # ---- Entrega ----
+  lote: 2000               # registros por POST
+  reintentos: 5            # intentos por lote antes de dejarlo en la cola
+  backoff_base: 1.0        # segundos; duplica en cada intento (con jitter)
+  backoff_tope: 60.0
+  timeout: 60
