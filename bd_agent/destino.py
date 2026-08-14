@@ -21,8 +21,14 @@ import hashlib
 import logging
 import urllib.error
 import urllib.request
+from collections import namedtuple
 
 log = logging.getLogger("agente.destino")
+
+# `error` lleva la excepcion que corto el drenaje (o None). El que llama decide
+# el codigo de salida por TIPO (ErrorAuth, ErrorReintentable...), no leyendo el
+# mensaje: el texto es para humanos y puede cambiar sin avisar.
+Drenaje = namedtuple("Drenaje", "enviados quedan mensaje error")
 
 # 429 y 5xx: el Core esta saturado o caido. 408/425: timeout del lado servidor.
 HTTP_REINTENTABLES = {408, 425, 429, 500, 502, 503, 504, 507, 509}
@@ -173,7 +179,9 @@ def drenar(spool, cfg_destino, dormir=time.sleep):
     """
     Vacia la cola contra el Core, lote por lote, confirmando lo que entra.
 
-    Devuelve (enviados, quedan_pendientes, mensaje).
+    Devuelve un Drenaje(enviados, quedan_pendientes, mensaje, error), donde
+    `error` es la excepcion que corto el drenaje (ErrorAuth, ErrorReintentable)
+    o None si termino limpio.
 
     - Error permanente en un lote: se anota el motivo y se sigue con el
       siguiente (el lote rechazado queda en la cola, y se saltea con `offset`
@@ -223,4 +231,4 @@ def drenar(spool, cfg_destino, dormir=time.sleep):
     mensaje = ", ".join(partes)
     if corte is not None:
         mensaje += f" — corte: {corte}"
-    return enviados, quedan, mensaje
+    return Drenaje(enviados, quedan, mensaje, corte)

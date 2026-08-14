@@ -9,6 +9,7 @@ en la proxima corrida, sin perder nada.
 """
 import sys
 import time
+import sqlite3
 import logging
 import argparse
 from collections import namedtuple
@@ -47,10 +48,29 @@ def ciclo_trabajo(cfg, log, sp=None):
     if cfg["destino"]["modo"] != "http":
         return _entrega_local(cfg, registros, log)
 
-    if sp is None:
-        with bd_spool.Spool(cfg["spool"]["ruta"]) as propio:
-            return _entrega_al_core(cfg, registros, propio, log)
-    return _entrega_al_core(cfg, registros, sp, log)
+    # La cola vive en un SQLite local: se puede quedar bloqueada (los dos timers
+    # la abren a la vez) o quedarse sin disco. Eso no puede matar el proceso con
+    # un traceback: se reporta como falla y la corrida devuelve su Resultado.
+    try:
+        if sp is None:
+            with bd_spool.Spool(cfg["spool"]["ruta"]) as propio:
+                return _entrega_al_core(cfg, registros, propio, log)
+        return _entrega_al_core(cfg, registros, sp, log)
+    except (sqlite3.Error, OSError) as e:
+        return _fallo_de_cola(cfg, log, e)
+
+
+def _fallo_de_cola(cfg, log, e):
+    """La cola no se pudo abrir/escribir. Se avisa al Core y se corta la corrida."""
+    msg = f"no se pudo usar la cola {cfg['spool']['ruta']}: {e}"
+    log.error(msg)
+    try:
+        # Sin la cola no hay estado que leer de ella: se manda el resto del extra.
+        salud.reportar(cfg, ok=False, registros=0, mensaje=msg,
+                       extra=salud.reunir_extra(cfg, None))
+    except Exception as e2:  # el heartbeat es best-effort, no puede tapar el error real
+        log.warning(f"tampoco se pudo reportar el latido: {e2}")
+    return Resultado(False, 0, msg, bd_config.EXIT_ERROR)
 
 
 def _entrega_local(cfg, registros, log):
@@ -74,7 +94,7 @@ def _entrega_al_core(cfg, registros, sp, log):
 
     # Se drena aunque el origen este caido: lo que ya estaba en la cola tiene
     # que salir igual.
-    enviados, quedan, msg = bd_destino.drenar(sp, cfg["destino"])
+    enviados, quedan, msg, error = bd_destino.drenar(sp, cfg["destino"])
     if not registros and not enviados and not quedan:
         msg = "sin registros nuevos"
 
@@ -99,7 +119,9 @@ def _entrega_al_core(cfg, registros, sp, log):
 
     codigo = bd_config.EXIT_OK
     if quedan:
-        codigo = bd_config.EXIT_AUTH if "token rechazado" in msg else bd_config.EXIT_RED
+        # Por TIPO de error, no por el texto del mensaje: el texto es para leer.
+        codigo = (bd_config.EXIT_AUTH if isinstance(error, bd_destino.ErrorAuth)
+                  else bd_config.EXIT_RED)
     if not origen_ok:
         codigo = bd_config.EXIT_ORIGEN
     return Resultado(ok, enviados, msg, codigo)
@@ -112,12 +134,15 @@ def solo_heartbeat(cfg, log):
     """
     sp = None
     try:
-        if cfg["destino"]["modo"] == "http":
-            sp = bd_spool.Spool(cfg["spool"]["ruta"])
-        extra = salud.reunir_extra(cfg, sp)
-    finally:
-        if sp is not None:
-            sp.cerrar()
+        try:
+            if cfg["destino"]["modo"] == "http":
+                sp = bd_spool.Spool(cfg["spool"]["ruta"])
+            extra = salud.reunir_extra(cfg, sp)
+        finally:
+            if sp is not None:
+                sp.cerrar()
+    except (sqlite3.Error, OSError) as e:
+        return _fallo_de_cola(cfg, log, e)
     pendientes = extra.get("pendientes_en_cola", 0)
     ok = bool(extra.get("origen_alcanzable")) and not pendientes
     msg = "latido" if ok else f"latido con novedades ({pendientes} en cola)"
@@ -167,6 +192,18 @@ def main(argv=None):
     if args.diagnostico:
         return bd_diagnostico.correr(args.config)
 
+    # Tambien antes de cargar la config: revertir es puro sistema de archivos y
+    # no mira cfg. Si una actualizacion dejo la config rota, volver atras es
+    # justamente lo unico que hay que poder hacer.
+    if args.revertir:
+        try:
+            destino = bd_actualizacion.revertir()
+        except bd_actualizacion.ErrorActualizacion as e:
+            log.error(f"no se pudo revertir: {e}")
+            return bd_config.EXIT_ERROR
+        log.info(f"revertido a la version anterior en {destino}")
+        return bd_config.EXIT_OK
+
     try:
         cfg = bd_config.cargar(args.config)
     except bd_config.ErrorConfig as e:
@@ -180,15 +217,6 @@ def main(argv=None):
         with bd_spool.Spool(cfg["spool"]["ruta"]) as sp:
             n = sp.reencolar_desde(args.reenviar_desde)
         log.info(f"{n} registros reencolados desde {args.reenviar_desde}")
-        return bd_config.EXIT_OK
-
-    if args.revertir:
-        try:
-            destino = bd_actualizacion.revertir()
-        except bd_actualizacion.ErrorActualizacion as e:
-            log.error(f"no se pudo revertir: {e}")
-            return bd_config.EXIT_ERROR
-        log.info(f"revertido a la version anterior en {destino}")
         return bd_config.EXIT_OK
 
     if args.actualizar:

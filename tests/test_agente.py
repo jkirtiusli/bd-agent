@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """Ciclo completo: leer -> encolar -> drenar -> reportar."""
 import logging
+import sqlite3
 
 import pytest
 
 from bd_agent import agente
+from bd_agent import destino as bd_destino
 from bd_agent import config as bd_config
 from bd_agent import spool as bd_spool
 
@@ -46,7 +48,7 @@ def espiar(monkeypatch):
 def test_ciclo_encola_y_drena(tmp_path, espiar):
     instalar, reportes = espiar
     instalar([registro(), registro(metrica="agua_dia")],
-             lambda sp, dest, dormir=None: (2, 0, "2 enviados"))
+             lambda sp, dest, dormir=None: (2, 0, "2 enviados", None))
     r = agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
     assert r.ok is True and r.registros == 2 and r.codigo == bd_config.EXIT_OK
     assert reportes[0][0] is True
@@ -58,7 +60,7 @@ def test_lo_leido_queda_en_la_cola(tmp_path, espiar):
     """El registro se persiste ANTES de intentar entregarlo. Esa es la garantia."""
     instalar, _reportes = espiar
     instalar([registro(), registro(metrica="agua_dia")],
-             lambda sp, dest, dormir=None: (0, 2, "0 enviados, 2 en cola"))
+             lambda sp, dest, dormir=None: (0, 2, "0 enviados, 2 en cola", None))
     agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
     with bd_spool.Spool(str(tmp_path / "spool.db")) as sp:
         assert sp.estado()["pendientes_en_cola"] == 2
@@ -66,22 +68,35 @@ def test_lo_leido_queda_en_la_cola(tmp_path, espiar):
 
 def test_core_caido_no_pierde_datos_y_marca_error(tmp_path, espiar):
     instalar, reportes = espiar
-    instalar([registro()], lambda sp, dest, dormir=None: (0, 1, "0 enviados, 1 en cola"))
+    instalar([registro()],
+             lambda sp, dest, dormir=None: (0, 1, "0 enviados, 1 en cola",
+                                            bd_destino.ErrorReintentable("core caido")))
     r = agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
     assert r.ok is False and r.codigo == bd_config.EXIT_RED
     assert reportes[0][0] is False
 
 
 def test_token_rechazado_da_codigo_de_auth(tmp_path, espiar):
+    """El codigo sale del TIPO de error, no de buscar palabras en el mensaje."""
     instalar, _reportes = espiar
     instalar([registro()],
-             lambda sp, dest, dormir=None: (0, 1, "0 enviados — corte: token rechazado"))
+             lambda sp, dest, dormir=None: (0, 1, "0 enviados — corte: HTTP 403",
+                                            bd_destino.ErrorAuth("HTTP 403")))
     assert agente.ciclo_trabajo(cfg_http(tmp_path), LOG).codigo == bd_config.EXIT_AUTH
+
+
+def test_error_de_red_da_codigo_de_red_aunque_el_mensaje_hable_de_token(tmp_path, espiar):
+    """La contracara: un mensaje que menciona el token pero no es un ErrorAuth."""
+    instalar, _reportes = espiar
+    instalar([registro()],
+             lambda sp, dest, dormir=None: (0, 1, "0 enviados — corte: token rechazado?",
+                                            bd_destino.ErrorReintentable("sin conexion")))
+    assert agente.ciclo_trabajo(cfg_http(tmp_path), LOG).codigo == bd_config.EXIT_RED
 
 
 def test_sin_registros_reporta_ok(tmp_path, espiar):
     instalar, reportes = espiar
-    instalar([], lambda sp, dest, dormir=None: (0, 0, "0 enviados"))
+    instalar([], lambda sp, dest, dormir=None: (0, 0, "0 enviados", None))
     r = agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
     assert r.ok is True and r.mensaje == "sin registros nuevos"
     assert reportes[0][0] is True
@@ -98,7 +113,7 @@ def test_origen_caido_no_reporta_verde(tmp_path, monkeypatch):
                         lambda cfg, ok, registros, mensaje, extra=None:
                         reportes.append((ok, mensaje)))
     monkeypatch.setattr(agente.bd_destino, "drenar",
-                        lambda sp, dest, dormir=None: (0, 0, "0 enviados"))
+                        lambda sp, dest, dormir=None: (0, 0, "0 enviados", None))
     cfg = cfg_http(tmp_path)
     cfg["ruta_csv"] = str(tmp_path / "montaje-caido")  # no existe
     r = agente.ciclo_trabajo(cfg, LOG)
@@ -117,7 +132,7 @@ def test_carpeta_sin_galpones_no_reporta_verde(tmp_path, monkeypatch):
                         lambda cfg, ok, registros, mensaje, extra=None:
                         reportes.append((ok, mensaje)))
     monkeypatch.setattr(agente.bd_destino, "drenar",
-                        lambda sp, dest, dormir=None: (0, 0, "0 enviados"))
+                        lambda sp, dest, dormir=None: (0, 0, "0 enviados", None))
     r = agente.ciclo_trabajo(cfg_http(tmp_path, con_galpon=False), LOG)
     assert r.ok is False and r.codigo == bd_config.EXIT_ORIGEN
     assert reportes[0][0] is False and "ningun galpon" in reportes[0][1]
@@ -129,7 +144,7 @@ def test_cola_se_drena_aunque_el_origen_este_caido(tmp_path, monkeypatch):
                         lambda cfg, ok, registros, mensaje, extra=None: None)
     drenados = []
     monkeypatch.setattr(agente.bd_destino, "drenar",
-                        lambda sp, dest, dormir=None: (drenados.append(1), (3, 0, "3 enviados"))[1])
+                        lambda sp, dest, dormir=None: (drenados.append(1), (3, 0, "3 enviados", None))[1])
     cfg = cfg_http(tmp_path)
     cfg["ruta_csv"] = str(tmp_path / "montaje-caido")
     r = agente.ciclo_trabajo(cfg, LOG)
@@ -158,7 +173,7 @@ def test_segunda_corrida_no_reenvia_lo_mismo(tmp_path, espiar):
         bloque = sp.tomar(1000)
         sp.confirmar([k for k, _, _ in bloque])
         entregados.append(len(bloque))
-        return len(bloque), 0, f"{len(bloque)} enviados"
+        return len(bloque), 0, f"{len(bloque)} enviados", None
 
     instalar([registro(), registro(metrica="agua_dia")], drenar)
     cfg = cfg_http(tmp_path)
@@ -190,6 +205,54 @@ def test_solo_heartbeat_no_lee_los_csv(tmp_path, monkeypatch):
     assert reportes and reportes[0][2]["origen_alcanzable"] is True
 
 
+# ---------------- la cola falla ----------------
+
+def test_cola_bloqueada_no_tumba_el_ciclo(tmp_path, espiar, monkeypatch):
+    """
+    Los dos timers abren el mismo SQLite: se puede quedar bloqueado. Eso tiene
+    que salir como Resultado con codigo, no como traceback y exit 1 generico.
+    """
+    instalar, reportes = espiar
+    instalar([registro()], lambda sp, dest, dormir=None: (1, 0, "1 enviado", None))
+
+    def cola_bloqueada(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(agente.bd_spool, "Spool", cola_bloqueada)
+    r = agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
+    assert r.ok is False and r.codigo == bd_config.EXIT_ERROR
+    assert "no se pudo usar la cola" in r.mensaje
+    assert reportes and reportes[0][0] is False  # el Core se entera igual
+
+
+def test_encolar_sin_disco_no_tumba_el_ciclo(tmp_path, espiar, monkeypatch):
+    instalar, reportes = espiar
+    instalar([registro()], lambda sp, dest, dormir=None: (1, 0, "1 enviado", None))
+
+    def sin_disco(self, registros):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(agente.bd_spool.Spool, "encolar", sin_disco)
+    r = agente.ciclo_trabajo(cfg_http(tmp_path), LOG)
+    assert r.ok is False and r.codigo == bd_config.EXIT_ERROR
+    assert reportes and reportes[0][0] is False
+
+
+def test_solo_heartbeat_con_la_cola_bloqueada(tmp_path, monkeypatch):
+    reportes = []
+    monkeypatch.setattr(agente.salud, "reportar",
+                        lambda cfg, ok, registros, mensaje, extra=None:
+                        reportes.append((ok, mensaje)))
+
+    def cola_bloqueada(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(agente.bd_spool, "Spool", cola_bloqueada)
+    r = agente.solo_heartbeat(cfg_http(tmp_path), LOG)
+    assert r.ok is False and r.codigo == bd_config.EXIT_ERROR
+    assert reportes and reportes[0][0] is False
+
+
 # ---------------- CLI ----------------
 
 def test_main_config_invalida_devuelve_codigo_config(tmp_path):
@@ -210,3 +273,32 @@ def test_main_reenviar_desde(tmp_path, monkeypatch):
                         "--reenviar-desde", "2026-08-01"]) == bd_config.EXIT_OK
     with bd_spool.Spool(str(tmp_path / "spool.db")) as sp:
         assert sp.estado()["pendientes_en_cola"] == 1
+
+
+def test_main_revertir_funciona_con_la_config_rota(tmp_path, monkeypatch):
+    """
+    Justo despues de una mala actualizacion la config puede estar ilegible. Si
+    revertir necesitara cargarla, el rollback seria imposible: por eso va antes.
+    """
+    llamadas = []
+    monkeypatch.setattr(agente.bd_actualizacion, "revertir",
+                        lambda: llamadas.append(1) or str(tmp_path / "anterior"))
+    ruta_cfg = tmp_path / "config.yaml"
+    ruta_cfg.write_text("granja: [esto: no es\n  yaml valido", encoding="utf-8")
+    assert agente.main(["--config", str(ruta_cfg), "--revertir"]) == bd_config.EXIT_OK
+    assert llamadas == [1]
+
+
+def test_main_revertir_funciona_sin_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(agente.bd_actualizacion, "revertir",
+                        lambda: str(tmp_path / "anterior"))
+    assert agente.main(["--config", str(tmp_path / "no-existe.yaml"),
+                        "--revertir"]) == bd_config.EXIT_OK
+
+
+def test_main_revertir_falla_devuelve_error(tmp_path, monkeypatch):
+    def explota():
+        raise agente.bd_actualizacion.ErrorActualizacion("no hay version anterior")
+    monkeypatch.setattr(agente.bd_actualizacion, "revertir", explota)
+    assert agente.main(["--config", str(tmp_path / "no-existe.yaml"),
+                        "--revertir"]) == bd_config.EXIT_ERROR

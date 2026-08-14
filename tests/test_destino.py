@@ -152,8 +152,8 @@ def test_drenar_confirma_lote_por_lote(monkeypatch, sp, sin_dormir):
     cargar(sp, 5)
     monkeypatch.setattr(bd_destino.urllib.request, "urlopen",
                         lambda req, timeout=None: RespuestaFalsa(200))
-    enviados, quedan, _msg = bd_destino.drenar(sp, DEST, dormir=dormir)
-    assert (enviados, quedan) == (5, 0)
+    enviados, quedan, _msg, error = bd_destino.drenar(sp, DEST, dormir=dormir)
+    assert (enviados, quedan) == (5, 0) and error is None
     assert sp.estado()["confirmados_total"] == 5
 
 
@@ -170,8 +170,9 @@ def test_drenar_conserva_lo_confirmado_aunque_despues_falle(monkeypatch, sp, sin
         raise urllib.error.URLError("se corto internet")
 
     monkeypatch.setattr(bd_destino.urllib.request, "urlopen", urlopen)
-    enviados, quedan, _msg = bd_destino.drenar(sp, DEST, dormir=dormir)
-    assert enviados == 2 and quedan == 4          # el primer lote entro y quedo firme
+    enviados, quedan, _msg, error = bd_destino.drenar(sp, DEST, dormir=dormir)
+    assert enviados == 2 and quedan == 4
+    assert isinstance(error, bd_destino.ErrorReintentable)          # el primer lote entro y quedo firme
     assert sp.estado()["confirmados_total"] == 2  # no se reenvia la proxima vez
 
 
@@ -191,7 +192,7 @@ def test_drenar_no_gira_en_falso_con_un_lote_rechazado(monkeypatch, sp, sin_dorm
         return RespuestaFalsa(200)
 
     monkeypatch.setattr(bd_destino.urllib.request, "urlopen", urlopen)
-    enviados, quedan, msg = bd_destino.drenar(sp, DEST, dormir=dormir)
+    enviados, quedan, msg, _error = bd_destino.drenar(sp, DEST, dormir=dormir)
     assert enviados == 2 and quedan == 2   # 2 rechazados siguen en cola
     assert "rechazados" in msg
     assert "400" in sp.estado()["ultimo_error"]
@@ -207,8 +208,10 @@ def test_drenar_corta_si_el_token_es_invalido(monkeypatch, sp, sin_dormir):
         raise http_error(403)
 
     monkeypatch.setattr(bd_destino.urllib.request, "urlopen", urlopen)
-    enviados, quedan, msg = bd_destino.drenar(sp, DEST, dormir=dormir)
+    enviados, quedan, msg, error = bd_destino.drenar(sp, DEST, dormir=dormir)
     assert enviados == 0 and quedan == 6
+    # el tipo viaja al que llama: el codigo de salida no depende del texto
+    assert isinstance(error, bd_destino.ErrorAuth)
     assert len(llamadas) == 1  # no martilla el Core con un token que no sirve
     assert "token rechazado" in msg
 
