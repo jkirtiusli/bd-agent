@@ -79,7 +79,7 @@ def test_sin_canal_no_hay_url(tmp_path):
 
 def test_consultar_no_propaga_errores_de_red(tmp_path, monkeypatch):
     """Que no se pueda consultar la actualizacion no es un incidente."""
-    monkeypatch.setattr(act.urllib.request, "urlopen",
+    monkeypatch.setattr(act, "_abrir",
                         lambda *a, **k: (_ for _ in ()).throw(
                             urllib.error.URLError("sin red")))
     assert act.consultar(cfg_base(tmp_path)) is None
@@ -89,7 +89,7 @@ def test_consultar_404_es_silencioso(tmp_path, monkeypatch):
     """El Core todavia no implemento el endpoint: no es un error."""
     def explota(*a, **k):
         raise urllib.error.HTTPError("u", 404, "no", None, None)
-    monkeypatch.setattr(act.urllib.request, "urlopen", explota)
+    monkeypatch.setattr(act, "_abrir", explota)
     assert act.consultar(cfg_base(tmp_path)) is None
 
 
@@ -108,8 +108,7 @@ class RespuestaFalsa(io.BytesIO):
 @pytest.fixture
 def servir(monkeypatch):
     def hacer(datos):
-        monkeypatch.setattr(act.urllib.request, "urlopen",
-                            lambda *a, **k: RespuestaFalsa(datos))
+        monkeypatch.setattr(act, "_abrir", lambda *a, **k: RespuestaFalsa(datos))
     return hacer
 
 
@@ -133,6 +132,33 @@ def test_sha256_que_no_coincide_borra_lo_bajado(tmp_path, servir):
 def test_rechaza_http_sin_tls(tmp_path):
     with pytest.raises(act.ErrorActualizacion, match="HTTPS"):
         act.descargar("http://x/y", "abc", str(tmp_path / "z.bin"))
+
+
+def test_rechaza_redirect_de_https_a_http(tmp_path):
+    """
+    Un 302 hacia http:// degradaria la descarga a texto plano: el chequeo
+    inicial no alcanza, hay que validar cada salto.
+    """
+    manejador = act._RedirectSoloHttps()
+    pedido = act.urllib.request.Request("https://x/y")
+    with pytest.raises(act.ErrorActualizacion, match="HTTPS"):
+        manejador.redirect_request(pedido, io.BytesIO(b""), 302, "Found", {},
+                                   "http://x/y")
+
+
+def test_acepta_redirect_entre_https(tmp_path):
+    """Redirigir a otro HTTPS es legitimo: no se puede romper eso."""
+    manejador = act._RedirectSoloHttps()
+    pedido = act.urllib.request.Request("https://x/y")
+    nuevo = manejador.redirect_request(pedido, io.BytesIO(b""), 302, "Found",
+                                       {}, "https://otro/y")
+    assert nuevo.full_url == "https://otro/y"
+
+
+def test_consultar_por_http_no_sale_a_la_red(tmp_path):
+    """El manifiesto tambien es HTTPS obligatorio, y no es un incidente."""
+    cfg = cfg_base(tmp_path, url="http://core.test/v1/agente/version")
+    assert act.consultar(cfg) is None
 
 
 def test_corta_si_supera_el_tope(tmp_path, servir):
@@ -211,6 +237,70 @@ def test_revertir_sin_version_anterior_avisa(tmp_path, monkeypatch):
     monkeypatch.setattr(act, "es_ejecutable", lambda: True)
     with pytest.raises(act.ErrorActualizacion, match="no hay version anterior"):
         act.revertir(ruta_actual=str(actual))
+
+
+def _paquete_falso(tmp_path, monkeypatch, contenido="3.1.0", viejo="3.0.0"):
+    """
+    Arma un bd_agent/ y un bd_agent.viejo/ de mentira y hace que `revertir`
+    los tome como si fueran la instalacion real.
+    """
+    import bd_agent
+    destino = tmp_path / "bd_agent"
+    destino.mkdir()
+    (destino / "__init__.py").write_text(f"# {contenido}\n", encoding="utf-8")
+    respaldo = tmp_path / ("bd_agent" + act._SUFIJO_VIEJO)
+    respaldo.mkdir()
+    (respaldo / "__init__.py").write_text(f"# {viejo}\n", encoding="utf-8")
+    monkeypatch.setattr(bd_agent, "__file__", str(destino / "__init__.py"))
+    monkeypatch.setattr(act, "es_ejecutable", lambda: False)
+    return destino, respaldo
+
+
+def test_revertir_fuente_vuelve_a_la_anterior(tmp_path, monkeypatch):
+    destino, _viejo = _paquete_falso(tmp_path, monkeypatch)
+    assert act.revertir() == str(destino)
+    assert "3.0.0" in (destino / "__init__.py").read_text()
+    assert not os.path.exists(str(destino) + act._SUFIJO_VIEJO)
+
+
+def test_revertir_fuente_no_borra_el_respaldo_si_no_puede_apartar(tmp_path, monkeypatch):
+    """
+    `_borrar` se traga los errores: si el destino queda a medias, `os.replace`
+    tiraba un OSError crudo que nadie atrapa. Tiene que ser ErrorActualizacion
+    y el respaldo tiene que seguir entero.
+    """
+    destino, viejo = _paquete_falso(tmp_path, monkeypatch)
+    real = act.os.replace
+
+    def falla(origen, hacia, *a, **k):
+        if str(origen) == str(destino):     # no se puede apartar lo instalado
+            raise OSError(39, "Directory not empty")
+        return real(origen, hacia, *a, **k)
+
+    monkeypatch.setattr(act.os, "replace", falla)
+    with pytest.raises(act.ErrorActualizacion, match="sigue intacta"):
+        act.revertir()
+
+    assert (viejo / "__init__.py").read_text().strip() == "# 3.0.0"
+    assert "3.1.0" in (destino / "__init__.py").read_text()
+
+
+def test_revertir_fuente_restaura_si_falla_el_ultimo_paso(tmp_path, monkeypatch):
+    """Si el respaldo no se puede poner en su lugar, no se queda sin nada."""
+    destino, viejo = _paquete_falso(tmp_path, monkeypatch)
+    real = act.os.replace
+
+    def falla(origen, hacia, *a, **k):
+        if str(origen) == str(viejo):
+            raise OSError(39, "Directory not empty")
+        return real(origen, hacia, *a, **k)
+
+    monkeypatch.setattr(act.os, "replace", falla)
+    with pytest.raises(act.ErrorActualizacion, match="sigue intacta"):
+        act.revertir()
+
+    assert (viejo / "__init__.py").read_text().strip() == "# 3.0.0"
+    assert "3.1.0" in (destino / "__init__.py").read_text()
 
 
 # ---------------- paquete de codigo (gateway) ----------------

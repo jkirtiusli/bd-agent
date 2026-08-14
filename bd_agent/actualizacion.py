@@ -55,6 +55,44 @@ class ErrorActualizacion(Exception):
 
 
 # --------------------------------------------------------------------------
+# Red: HTTPS obligatorio, tambien en los redirects
+# --------------------------------------------------------------------------
+
+def _exigir_https(url):
+    """Lanza si la URL no es HTTPS. Es la unica puerta de entrada de red."""
+    if not str(url).lower().startswith("https://"):
+        raise ErrorActualizacion(f"la URL de descarga no es HTTPS: {url}")
+    return url
+
+
+class _RedirectSoloHttps(urllib.request.HTTPRedirectHandler):
+    """
+    urlopen sigue los 3xx solo; un 302 hacia http:// degradaria la descarga a
+    texto plano pese al chequeo inicial. Aca se valida CADA salto.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _exigir_https(newurl)
+        return urllib.request.HTTPRedirectHandler.redirect_request(
+            self, req, fp, code, msg, headers, newurl)
+
+
+def _abrir(destino, timeout, contexto=None):
+    """
+    Abre una URL o Request exigiendo HTTPS en el pedido y en cada redirect.
+
+    Es el unico punto por donde el modulo sale a la red: asi el chequeo no se
+    puede saltear por olvido en un urlopen suelto.
+    """
+    url = destino.full_url if isinstance(destino, urllib.request.Request) else destino
+    _exigir_https(url)
+    contexto = contexto or ssl.create_default_context()  # verifica certificado
+    opener = urllib.request.build_opener(
+        _RedirectSoloHttps(), urllib.request.HTTPSHandler(context=contexto))
+    return opener.open(destino, timeout=timeout)
+
+
+# --------------------------------------------------------------------------
 # Versiones
 # --------------------------------------------------------------------------
 
@@ -127,7 +165,7 @@ def consultar(cfg):
     req.add_header("X-Agente-Granja", str(cfg.get("granja", "")))
     req.add_header("X-Agente-Plataforma", plataforma())
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _abrir(req, timeout=30) as resp:
             if resp.status == 204:
                 return None  # el Core dice "no hay nada para vos"
             return json.loads(resp.read().decode("utf-8"))
@@ -137,7 +175,9 @@ def consultar(cfg):
             return None
         log.warning(f"[actualizacion] HTTP {e.code} al consultar {url}")
         return None
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    # ErrorActualizacion aparece si el canal no es HTTPS o si redirige a http:
+    # tampoco es un incidente para la entrega de datos, se avisa y se sigue.
+    except (ErrorActualizacion, urllib.error.URLError, OSError, ValueError) as e:
         log.warning(f"[actualizacion] no se pudo consultar {url}: {e}")
         return None
 
@@ -176,18 +216,17 @@ def plataforma():
 
 def descargar(url, sha256_esperado, destino, max_mb=MAX_MB_POR_DEFECTO):
     """
-    Baja a `destino` verificando sha256 y tope de tamano. HTTPS obligatorio.
-    Si algo no cierra, borra lo bajado y lanza.
+    Baja a `destino` verificando sha256 y tope de tamano. HTTPS obligatorio,
+    tambien despues de cada redirect. Si algo no cierra, borra lo bajado y lanza.
     """
-    if not url.lower().startswith("https://"):
-        raise ErrorActualizacion(f"la URL de descarga no es HTTPS: {url}")
+    _exigir_https(url)
 
     contexto = ssl.create_default_context()  # verifica certificado, siempre
     tope = max_mb * 1024 * 1024
     h = hashlib.sha256()
     bajado = 0
     try:
-        with urllib.request.urlopen(url, timeout=_TIMEOUT, context=contexto) as resp, \
+        with _abrir(url, timeout=_TIMEOUT, contexto=contexto) as resp, \
                 open(destino, "wb") as f:
             while True:
                 bloque = resp.read(64 * 1024)
@@ -378,8 +417,38 @@ def revertir(ruta_actual=None):
     viejo = destino + _SUFIJO_VIEJO
     if not os.path.exists(viejo):
         raise ErrorActualizacion(f"no hay version anterior guardada en {viejo}")
-    _borrar(destino)
-    os.replace(viejo, destino)
+
+    # Mismo patron que aplicar_fuente: se corre lo instalado a un costado en vez
+    # de borrarlo. `_borrar` se traga los errores, asi que un borrado parcial
+    # dejaria `destino` a medias y `os.replace` fallaria con un OSError crudo
+    # (en Windows ni siquiera puede pisar una carpeta existente).
+    respaldo = destino + ".revirtiendo"
+    _borrar(respaldo)
+    if os.path.exists(respaldo):
+        raise ErrorActualizacion(
+            f"no se pudo limpiar {respaldo}: no se revirtio nada, "
+            f"la version anterior sigue intacta en {viejo}")
+    try:
+        if os.path.exists(destino):
+            os.replace(destino, respaldo)
+    except OSError as e:
+        raise ErrorActualizacion(
+            f"no se pudo apartar la version instalada ({e}): no se revirtio "
+            f"nada, la version anterior sigue intacta en {viejo}")
+
+    try:
+        os.replace(viejo, destino)
+    except OSError as e:
+        if os.path.exists(respaldo):     # dejar todo como estaba
+            try:
+                os.replace(respaldo, destino)
+            except OSError:
+                pass
+        raise ErrorActualizacion(
+            f"no se pudo poner la version anterior en su lugar ({e}): "
+            f"la version anterior sigue intacta en {viejo}")
+
+    _borrar(respaldo)
     return destino
 
 
