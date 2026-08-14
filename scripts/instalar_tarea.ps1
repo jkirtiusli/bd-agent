@@ -46,7 +46,7 @@ $disparador.Repetition = (New-ScheduledTaskTrigger -Once -At "00:02" `
 $alArrancar = New-ScheduledTaskTrigger -AtStartup
 $alArrancar.Delay = "PT3M"   # dar tiempo a que levante la red
 
-$config = New-ScheduledTaskSettingsSet `
+$ajustesTarea = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
@@ -59,7 +59,7 @@ $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
 
 Register-ScheduledTask -TaskName $Nombre -Force `
     -Action $accion -Trigger @($disparador, $alArrancar) `
-    -Settings $config -Principal $principal `
+    -Settings $ajustesTarea -Principal $principal `
     -Description "Agente BD-Copy: lee los CSV, encola y entrega al Core." | Out-Null
 
 # --- Tarea de auto-actualizacion (una vez por dia, de madrugada) ---
@@ -81,7 +81,7 @@ $dispAct = New-ScheduledTaskTrigger -Daily -At ("03:{0:d2}" -f $minuto)
 
 Register-ScheduledTask -TaskName "$Nombre-Update" -Force `
     -Action $accionAct -Trigger $dispAct `
-    -Settings $config -Principal $principal `
+    -Settings $ajustesTarea -Principal $principal `
     -Description "Agente BD-Copy: busca e instala actualizaciones." | Out-Null
 
 Write-Host ""

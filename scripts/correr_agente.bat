@@ -20,21 +20,30 @@ REM cierre. Con "--tarea" = todo al log, sin pausa.
 set INTERACTIVO=1
 if /i "%~1"=="--tarea" set INTERACTIVO=
 
-REM Activar venv si existe (opcional)
-if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
+REM Exe empaquetado (instalacion sin Python) vs modulo Python (instalacion
+REM desde el repo). Mismo criterio que configurar.bat: si esta el .exe en la
+REM raiz del repo, se usa; si no, se activa el venv (si existe) y se llama a
+REM Python. Sin este chequeo, una PC solo-exe fallaba con "python" no
+REM encontrado (exit 9009) en cada corrida de la Tarea Programada.
+if exist "agente-bdcopy.exe" (
+  set AGENTE_CMD=agente-bdcopy.exe
+) else (
+  if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
+  set AGENTE_CMD=python -m bd_agent.agente
+)
 
 set CODIGO=0
 if defined INTERACTIVO (
   REM Doble clic: la salida va a la pantalla, asi ves el progreso en vivo
   REM y un error no se pierde aunque el log este bloqueado por otra app.
   echo [%date% %time%] Corriendo agente --once
-  python -m bd_agent.agente --config config.yaml --once
+  !AGENTE_CMD! --config config.yaml --once
   set CODIGO=!errorlevel!
   echo [%date% %time%] Fin ^(exit !CODIGO!^)
   echo.
   if not "!CODIGO!"=="0" (
     echo Termino con error. Para ver que pasa:
-    echo    python -m bd_agent.agente --config config.yaml --diagnostico
+    echo    !AGENTE_CMD! --config config.yaml --diagnostico
     echo.
   )
   echo ===== Termino. Revisa arriba el resultado. Apreta una tecla para cerrar. =====
@@ -42,7 +51,7 @@ if defined INTERACTIVO (
 ) else (
   REM Tarea programada (desatendido): todo al log, sin pausa.
   echo [%date% %time%] Corriendo agente --once >> agente.log
-  python -m bd_agent.agente --config config.yaml --once >> agente.log 2>&1
+  !AGENTE_CMD! --config config.yaml --once >> agente.log 2>&1
   set CODIGO=!errorlevel!
   echo [%date% %time%] Fin ^(exit !CODIGO!^) >> agente.log
 )
