@@ -58,6 +58,11 @@ Body: un array JSON de registros (lotes de 2000 por defecto):
   del dato: **usala como clave del UPSERT.** Es opcional por compatibilidad con
   agentes viejos; si no viene, calculala en el servidor con esa misma fórmula.
 - `valor` puede ser `null`. `edad_dia`, `semana` y `hora_cierre` también.
+- **`valor` es numérico, no entero.** Hoy las 12 métricas son cuentas enteras
+  (huevos, aves, gramos), pero las que vienen —temperatura, humedad, peso
+  promedio— traen decimales. Guardalo como `NUMERIC`/`DOUBLE`. Elegir
+  `INTEGER` ahora es gratis y cambiarlo después es una migración con pérdida
+  de datos ya ingeridos.
 - **Dejá lugar para dato intradiario.** Hoy todas las métricas son un valor por
   día y `clave` se calcula sobre esos 5 campos. Si más adelante sumamos
   temperatura por hora, el Agente mandará un campo `hora` y lo incluirá en el
