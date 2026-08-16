@@ -82,6 +82,7 @@ e instalar Tailscale (`tailscale up --ssh`). El script imprime ambos comandos.
 | `--configurar` | asistente para elegir la carpeta de BD-Copy (con explorador) |
 | `--once` | una corrida (lo que usan systemd y la tarea programada) |
 | `--diagnostico` | revisa config, origen, frescura de los CSV, cola, Core, token y reloj |
+| `--explorar` | lista que datos hay en los CSV: mapeados y **disponibles sin mapear** |
 | `--solo-heartbeat` | reporta estado al Core sin leer los CSV |
 | `--reenviar-desde AAAA-MM-DD` | vuelve a encolar lo ya confirmado desde esa fecha |
 | `--actualizar` | busca version nueva, la verifica y se reemplaza |
@@ -159,7 +160,18 @@ el agente no corre, no hay latido que avisarlo.
 
 ## Agregar una metrica
 
-Editar `bd_agent/metricas.py` -> diccionario `CANONICAS`.
+Primero ver que hay disponible en esa granja:
+
+    agente-bdcopy.exe --config config.yaml --explorar   (o scripts\explorar.bat)
+
+Lista los CSV que el agente ya levanta y, sobre todo, los que traen datos y
+todavia no se mapean, con sus columnas, rango de fechas y un valor de muestra.
+
+- Si el archivo tiene columna `NUM` (la forma habitual), agregarlo es una linea
+  en `bd_agent/metricas.py` -> diccionario `CANONICAS`.
+- Si trae varias columnas de valor (por ejemplo `TMIN`/`TMAX`/`HUMEDAD`), no
+  alcanza con mapearlo: el parser saca el valor de `NUM` y hay que extenderlo.
+  `--explorar` lo avisa explicitamente.
 
 ## Estructura del dato normalizado
 

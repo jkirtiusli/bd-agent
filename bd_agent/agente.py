@@ -20,6 +20,7 @@ from bd_agent import config as bd_config
 from bd_agent import parser as bd_parser
 from bd_agent import destino as bd_destino
 from bd_agent import diagnostico as bd_diagnostico
+from bd_agent import explorador as bd_explorador
 from bd_agent import origen as bd_origen
 from bd_agent import salud
 from bd_agent import spool as bd_spool
@@ -160,6 +161,8 @@ def main(argv=None):
                     help="revisa config, origen, cola, Core y reloj; no entrega datos")
     ap.add_argument("--configurar", action="store_true",
                     help="asistente para elegir la carpeta de BD-Copy (con explorador)")
+    ap.add_argument("--explorar", action="store_true",
+                    help="lista que datos hay en los CSV, mapeados y sin mapear")
     ap.add_argument("--solo-heartbeat", action="store_true",
                     help="reporta estado al Core sin leer los CSV")
     ap.add_argument("--reenviar-desde", metavar="AAAA-MM-DD",
@@ -191,6 +194,9 @@ def main(argv=None):
 
     if args.diagnostico:
         return bd_diagnostico.correr(args.config)
+
+    if args.explorar:
+        return bd_explorador.correr(args.config)
 
     # Tambien antes de cargar la config: revertir es puro sistema de archivos y
     # no mira cfg. Si una actualizacion dejo la config rota, volver atras es

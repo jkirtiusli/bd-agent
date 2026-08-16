@@ -58,6 +58,13 @@ Body: un array JSON de registros (lotes de 2000 por defecto):
   del dato: **usala como clave del UPSERT.** Es opcional por compatibilidad con
   agentes viejos; si no viene, calculala en el servidor con esa misma fórmula.
 - `valor` puede ser `null`. `edad_dia`, `semana` y `hora_cierre` también.
+- **Dejá lugar para dato intradiario.** Hoy todas las métricas son un valor por
+  día y `clave` se calcula sobre esos 5 campos. Si más adelante sumamos
+  temperatura por hora, el Agente mandará un campo `hora` y lo incluirá en el
+  cálculo de `clave` — para vos son registros nuevos, no un cambio de esquema.
+  Guardá `hora` como columna nullable desde ahora y la clave natural como
+  `(granja, galpon, ciclo, metrica, fecha_dato, hora)`. Es gratis hacerlo ahora
+  y es una migración si se hace después.
 - Métricas posibles hoy: `huevos`, `aves_vivas`, `alimento_acumulado`,
   `alimento_dia`, `alimento_por_ave`, `agua_acumulado`, `agua_dia`,
   `agua_por_ave`, `silo`, `peso`, `mortalidad`, `descartes`. La lista crece:
