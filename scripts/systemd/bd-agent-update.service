@@ -1,0 +1,31 @@
+[Unit]
+Description=Agente BD-Copy — auto-actualizacion por pull
+Documentation=https://github.com/jkirtiusli/bd-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Corre como root, a diferencia del ciclo de datos: es el unico que necesita
+# escribir en /opt/bd-agent. Asi la ruta de datos sigue sin privilegios.
+User=root
+WorkingDirectory=/opt/bd-agent
+ExecStart=/opt/bd-agent/.venv/bin/python -m bd_agent.agente \
+    --config /etc/bd-agent/config.yaml --actualizar --desatendido
+
+LoadCredential=core_token:/etc/bd-agent/token
+
+# No hace falta reiniciar nada: los servicios son Type=oneshot sobre timer,
+# asi que la proxima corrida ya toma el codigo nuevo.
+ProtectSystem=strict
+ReadWritePaths=/opt/bd-agent /var/lib/bd-agent
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

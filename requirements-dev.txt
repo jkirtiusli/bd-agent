@@ -1,0 +1,4 @@
+-r requirements.txt
+
+pytest>=8.0
+pyinstaller>=6.0      # solo para construir el .exe (scripts/construir_exe.ps1)

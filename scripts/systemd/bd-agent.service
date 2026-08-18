@@ -1,0 +1,41 @@
+[Unit]
+Description=Agente BD-Copy — ciclo de datos (lee CSV, encola y entrega al Core)
+Documentation=https://github.com/jkirtiusli/bd-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bdagent
+Group=bdagent
+WorkingDirectory=/opt/bd-agent
+ExecStart=/opt/bd-agent/.venv/bin/python -m bd_agent.agente \
+    --config /etc/bd-agent/config.yaml --once
+
+# El token nunca queda en el config.yaml: systemd lo monta en
+# ${CREDENTIALS_DIRECTORY}/core_token, legible solo por este proceso.
+LoadCredential=core_token:/etc/bd-agent/token
+
+# La cola vive en /var/lib/bd-agent (systemd crea el directorio con permisos).
+StateDirectory=bd-agent
+StateDirectoryMode=0750
+
+# Endurecimiento: el agente solo necesita leer los CSV y escribir su cola.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# Una corrida no puede quedar colgada para siempre ocupando el turno siguiente.
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

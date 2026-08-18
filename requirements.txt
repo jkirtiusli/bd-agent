@@ -1,3 +1,4 @@
+# Unica dependencia en produccion. Los CSV de BD-Copy se leen con el modulo
+# `csv` de la stdlib: sacar pandas bajo el .exe de ~80 MB a ~10 MB y elimino
+# la dependencia mas pesada de instalar en Windows.
 pyyaml>=6.0
-pandas>=2.0
-pytest>=8.0

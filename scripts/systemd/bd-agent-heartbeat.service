@@ -1,0 +1,30 @@
+[Unit]
+Description=Agente BD-Copy — latido al Core (sin leer los CSV)
+Documentation=https://github.com/jkirtiusli/bd-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bdagent
+Group=bdagent
+WorkingDirectory=/opt/bd-agent
+ExecStart=/opt/bd-agent/.venv/bin/python -m bd_agent.agente \
+    --config /etc/bd-agent/config.yaml --solo-heartbeat
+
+LoadCredential=core_token:/etc/bd-agent/token
+StateDirectory=bd-agent
+StateDirectoryMode=0750
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+TimeoutStartSec=2min
+
+[Install]
+WantedBy=multi-user.target

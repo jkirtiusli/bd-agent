@@ -1,0 +1,22 @@
+[Unit]
+Description=Corre el Agente BD-Copy cada 15 minutos
+Documentation=https://github.com/jkirtiusli/bd-agent
+
+[Timer]
+OnCalendar=*:0/15
+
+# Lo mas importante del archivo: si el gateway estuvo apagado, la corrida
+# perdida se ejecuta apenas vuelve, en vez de esperar al proximo turno.
+# Es el reemplazo del "una vez por dia a las 12:30" que perdia el dia entero.
+Persistent=true
+
+# Que las granjas no golpeen el Core todas en el mismo segundo.
+RandomizedDelaySec=90
+
+# Un arranque en frio no dispara antes de que la red este lista.
+OnBootSec=2min
+AccuracySec=30s
+Unit=bd-agent.service
+
+[Install]
+WantedBy=timers.target

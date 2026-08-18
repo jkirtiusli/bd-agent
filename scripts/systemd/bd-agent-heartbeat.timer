@@ -1,0 +1,16 @@
+[Unit]
+Description=Latido del Agente BD-Copy cada 5 minutos
+Documentation=https://github.com/jkirtiusli/bd-agent
+
+[Timer]
+# Va aparte del ciclo de datos a proposito: el Core tiene que poder distinguir
+# "el gateway esta vivo pero no hay datos nuevos" de "el gateway se murio".
+OnCalendar=*:0/5
+Persistent=false
+RandomizedDelaySec=30
+OnBootSec=1min
+AccuracySec=15s
+Unit=bd-agent-heartbeat.service
+
+[Install]
+WantedBy=timers.target
