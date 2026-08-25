@@ -89,3 +89,53 @@ def test_carpeta_inexistente_devuelve_vacio(tmp_path):
 def test_carpeta_que_no_matchea_se_ignora(tmp_path):
     nave(tmp_path, "CarpetaCualquiera", {"MANPRODUCTION_TODAYEGG.csv": None})
     assert bd_parser.escanear(str(tmp_path), "g", "UTC") == ([], {})
+
+
+CABECERA_CLIMA = ("DATE\tTIME\tPRODDAY\tPRODWEEK\tROOMTEMP1\tROOMTEMP2\tROOMTEMP3"
+                  "\tEXTTEMP\tAIRSPEED")
+
+
+def test_clima_promedia_sondas_y_horas(tmp_path):
+    ayer = dt.date.today() - dt.timedelta(days=1)
+    f = ayer.strftime("%d.%m.%Y")
+    nave(tmp_path, archivos={"MANPRODUCTION_AVG.csv": (
+        f"{CABECERA_CLIMA}\n"
+        f"{f}\t{f} 01:00\t200\t29\t20\t22\t0\t0\t1.5\n"
+        f"{f}\t{f} 02:00\t200\t29\t24\t26\t0\t10\t2.5")})
+    registros, avisos = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    por_metrica = {r["metrica"]: r for r in registros}
+    # ROOMTEMP3=0 es sonda ausente: no arrastra el promedio (21 y 25 -> 23)
+    assert por_metrica["temperatura"]["valor"] == 23.0
+    # EXTTEMP=0 si es una medicion real (0 y 10 -> 5)
+    assert por_metrica["temperatura_exterior"]["valor"] == 5.0
+    assert por_metrica["velocidad_aire"]["valor"] == 2.0
+    r = por_metrica["temperatura"]
+    assert r["fecha_dato"] == ayer.isoformat()
+    assert r["hora_cierre"] == "02:00"  # la ultima fila del dia
+    assert (r["edad_dia"], r["semana"], r["fuente"]) == \
+        (200, 29, "MANPRODUCTION_AVG.csv")
+    # sin HUMIDITY/CO2/NH3/NEGPRESSURE en la cabecera, esas metricas no se inventan
+    assert "humedad" not in por_metrica and "co2" not in por_metrica
+    # el archivo esta mapeado: el centinela no lo marca como nuevo
+    assert avisos == {}
+
+
+def test_clima_max_toma_el_maximo_del_dia(tmp_path):
+    ayer = dt.date.today() - dt.timedelta(days=1)
+    f = ayer.strftime("%d.%m.%Y")
+    cabecera = "DATE\tTIME\tPRODDAY\tPRODWEEK\tROOMTEMP1\tROOMTEMP2"
+    nave(tmp_path, archivos={"MANPRODUCTION_MAX.csv": (
+        f"{cabecera}\n"
+        f"{f}\t{f} 01:00\t200\t29\t25\t28\n"
+        f"{f}\t{f} 02:00\t200\t29\t31\t27")})
+    registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    assert [(r["metrica"], r["valor"]) for r in registros] == \
+        [("temperatura_max", 31.0)]
+
+
+def test_clima_descarta_el_dia_en_curso(tmp_path):
+    hoy = dt.date.today().strftime("%d.%m.%Y")
+    nave(tmp_path, archivos={"MANPRODUCTION_AVG.csv": (
+        f"{CABECERA_CLIMA}\n{hoy}\t{hoy} 01:00\t200\t29\t20\t22\t0\t5\t1.5")})
+    registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    assert registros == []

@@ -72,7 +72,10 @@ Body: un array JSON de registros (lotes de 2000 por defecto):
   y es una migración si se hace después.
 - Métricas posibles hoy: `huevos`, `aves_vivas`, `alimento_acumulado`,
   `alimento_dia`, `alimento_por_ave`, `agua_acumulado`, `agua_dia`,
-  `agua_por_ave`, `silo`, `peso`, `mortalidad`, `descartes`. La lista crece:
+  `agua_por_ave`, `silo`, `peso`, `mortalidad`, `descartes`, y las de clima y
+  ventilación (con decimales, agregadas a un valor por día): `temperatura`,
+  `temperatura_min`, `temperatura_max`, `temperatura_exterior`, `humedad`,
+  `co2`, `amoniaco`, `presion_negativa`, `velocidad_aire`. La lista crece:
   no la hardcodees de forma que un valor nuevo haga fallar la ingesta.
 - El Agente nunca manda el día en curso, solo días cerrados.
 

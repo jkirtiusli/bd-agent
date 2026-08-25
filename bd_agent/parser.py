@@ -22,7 +22,7 @@ import csv
 import logging
 import datetime as dt
 
-from bd_agent.metricas import CANONICAS, ARCHIVOS_CONOCIDOS
+from bd_agent.metricas import CANONICAS, CLIMA, ARCHIVOS_CONOCIDOS
 
 log = logging.getLogger("agente.parser")
 
@@ -138,6 +138,60 @@ def _elegir_fuente(ruta_nave, fuentes):
     return None, None
 
 
+_AGREGADORES = {
+    "prom": lambda valores: sum(valores) / len(valores),
+    "min": min,
+    "max": max,
+}
+
+
+def _clima_por_dia(filas, spec, hoy):
+    """
+    Reduce las filas horarias de un archivo de clima a un valor por dia cerrado.
+    Devuelve {fecha: (valor, ultima_fila_del_dia)}.
+    """
+    combinar = _AGREGADORES[spec["agregar"]]
+    por_dia = {}
+    for fila in filas:
+        fecha = fila["FECHA"]
+        if fecha >= hoy:
+            continue  # descarta dia en curso / no cerrado
+        valores = []
+        for col in spec["columnas"]:
+            v = _numero(fila.get(col))
+            if v is None or (spec["cero_es_nulo"] and v == 0):
+                continue
+            valores.append(v)
+        if not valores:
+            continue  # fila sin ninguna sonda valida: no se inventa
+        por_dia.setdefault(fecha, []).append((combinar(valores), fila))
+    return {
+        fecha: (combinar([v for v, _ in horas]), horas[-1][1])
+        for fecha, horas in por_dia.items()
+    }
+
+
+def _procesar_clima(ruta_nave, hoy):
+    """
+    Registros de clima/ventilacion de una nave: (metrica, fecha, valor, fila).
+    Los archivos anchos (AVG/MIN/MAX) se leen una sola vez aunque varias
+    metricas salgan del mismo.
+    """
+    tablas = {}
+    salida = []
+    for metrica, spec in CLIMA.items():
+        arch = spec["archivo"]
+        if arch not in tablas:
+            ruta = os.path.join(ruta_nave, arch)
+            tablas[arch] = _leer_tabla(ruta) if os.path.exists(ruta) else None
+        filas = tablas[arch]
+        if not filas or spec["columnas"][0] not in filas[0]:
+            continue  # sin archivo o con otra forma: no se inventa
+        for fecha, (valor, fila) in sorted(_clima_por_dia(filas, spec, hoy).items()):
+            salida.append((metrica, arch, fecha, valor, fila))
+    return salida
+
+
 def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
     """
     Devuelve (registros, aviso_centinela) para una nave.
@@ -170,6 +224,24 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
                 "semana": _entero(fila.get("PRODWEEK")),
                 "fuente": archivo,
             })
+
+    # Clima y ventilacion: archivos anchos reducidos a un valor por dia.
+    # El valor va con decimales (una temperatura no es una cuenta entera).
+    for metrica, archivo, fecha, valor, fila in _procesar_clima(ruta_nave, hoy):
+        registros.append({
+            "granja": granja,
+            "galpon": galpon,
+            "ciclo": ciclo,
+            "metrica": metrica,
+            "fecha_dato": fecha.isoformat(),
+            "hora_cierre": _hora_cierre(fila.get("TIME")),
+            "zona_horaria": zona_horaria,
+            "capturado_en": capturado_en,
+            "valor": round(valor, 2),
+            "edad_dia": _entero(fila.get("PRODDAY")),
+            "semana": _entero(fila.get("PRODWEEK")),
+            "fuente": archivo,
+        })
 
     # Centinela: archivos con datos que NO estan en la lista canonica
     aviso = []
