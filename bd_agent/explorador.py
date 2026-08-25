@@ -14,7 +14,7 @@ import os
 import csv
 import datetime as dt
 
-from bd_agent.metricas import CANONICAS, ARCHIVOS_CONOCIDOS
+from bd_agent.metricas import CANONICAS, CLIMA, ARCHIVOS_CONOCIDOS
 from bd_agent.parser import parse_nombre_nave, _RE_FECHA, _numero, _ENCODING
 
 
@@ -113,6 +113,9 @@ def _metrica_de(archivo):
     for metrica, fuentes in CANONICAS.items():
         if archivo in fuentes:
             return metrica
+    clima = [m for m, spec in CLIMA.items() if spec["archivo"] == archivo]
+    if clima:
+        return ", ".join(clima)
     return None
 
 

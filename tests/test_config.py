@@ -94,6 +94,24 @@ def test_defaults(tmp_path):
     cfg = bd_config.cargar(escribir(tmp_path, '  token: "t"'))
     d = cfg["destino"]
     assert (d["lote"], d["reintentos"], d["timeout"]) == (2000, 5, 60)
+    assert cfg["clima_desde"] is None  # sin limite: todo el historico
+
+
+def test_clima_desde_acepta_texto_y_fecha_yaml(tmp_path):
+    import datetime as dt
+    # con comillas llega como texto; sin comillas YAML ya lo parsea a date
+    cfg = bd_config.cargar(escribir(tmp_path,
+                                    '  token: "t"\nclima_desde: "2025-01-01"'))
+    assert cfg["clima_desde"] == dt.date(2025, 1, 1)
+    cfg = bd_config.cargar(escribir(tmp_path,
+                                    '  token: "t"\nclima_desde: 2025-01-01'))
+    assert cfg["clima_desde"] == dt.date(2025, 1, 1)
+
+
+def test_clima_desde_invalida_es_error_claro(tmp_path):
+    with pytest.raises(bd_config.ErrorConfig, match="clima_desde"):
+        bd_config.cargar(escribir(tmp_path,
+                                  '  token: "t"\nclima_desde: "enero"'))
 
 
 def test_ruta_de_windows_en_el_config(tmp_path):

@@ -34,7 +34,8 @@ def ciclo_trabajo(cfg, log, sp=None):
     """Lee CSV, encola, drena y reporta heartbeat. Devuelve un Resultado."""
     zona = cfg.get("zona_horaria", "UTC")
     try:
-        registros, avisos = bd_parser.escanear(cfg["ruta_csv"], cfg["granja"], zona)
+        registros, avisos = bd_parser.escanear(cfg["ruta_csv"], cfg["granja"], zona,
+                                               clima_desde=cfg.get("clima_desde"))
     except OSError as e:
         msg = f"no se pudo leer el origen {cfg['ruta_csv']}: {e}"
         log.error(msg)

@@ -37,7 +37,8 @@ def espiar(monkeypatch):
 
     def instalar(registros, drenar):
         monkeypatch.setattr(agente.bd_parser, "escanear",
-                            lambda ruta, granja, zona: (registros, {}))
+                            lambda ruta, granja, zona, clima_desde=None:
+                            (registros, {}))
         monkeypatch.setattr(agente.bd_destino, "drenar", drenar)
         monkeypatch.setattr(agente.salud, "reportar",
                             lambda cfg, ok, registros, mensaje, extra=None:
@@ -152,7 +153,7 @@ def test_cola_se_drena_aunque_el_origen_este_caido(tmp_path, monkeypatch):
 
 
 def test_origen_ilegible_da_codigo_de_origen(tmp_path, monkeypatch):
-    def explota(ruta, granja, zona):
+    def explota(ruta, granja, zona, clima_desde=None):
         raise OSError("montaje SMB caido")
     monkeypatch.setattr(agente.bd_parser, "escanear", explota)
     reportes = []
@@ -184,7 +185,8 @@ def test_segunda_corrida_no_reenvia_lo_mismo(tmp_path, espiar):
 
 def test_modo_local_json_no_usa_cola(tmp_path, monkeypatch):
     monkeypatch.setattr(agente.bd_parser, "escanear",
-                        lambda ruta, granja, zona: ([registro()], {}))
+                        lambda ruta, granja, zona, clima_desde=None:
+                        ([registro()], {}))
     cfg = {"granja": "g", "zona_horaria": "UTC", "ruta_csv": str(tmp_path),
            "destino": {"modo": "local_json", "ruta_salida": str(tmp_path / "out.json")},
            "spool": {"ruta": str(tmp_path / "spool.db")}}

@@ -63,17 +63,20 @@ Body: un array JSON de registros (lotes de 2000 por defecto):
   promedio— traen decimales. Guardalo como `NUMERIC`/`DOUBLE`. Elegir
   `INTEGER` ahora es gratis y cambiarlo después es una migración con pérdida
   de datos ya ingeridos.
-- **Dejá lugar para dato intradiario.** Hoy todas las métricas son un valor por
-  día y `clave` se calcula sobre esos 5 campos. Si más adelante sumamos
-  temperatura por hora, el Agente mandará un campo `hora` y lo incluirá en el
-  cálculo de `clave` — para vos son registros nuevos, no un cambio de esquema.
-  Guardá `hora` como columna nullable desde ahora y la clave natural como
-  `(granja, galpon, ciclo, metrica, fecha_dato, hora)`. Es gratis hacerlo ahora
-  y es una migración si se hace después.
+- **El dato intradiario ya llegó.** Las métricas de clima vienen con un campo
+  `hora` (`"HH:MM"`, hora local del galpón) y para ellas la clave es
+  `sha256("granja|galpon|ciclo|metrica|fecha_dato|hora")` — la hora se agrega
+  al final SOLO cuando viene; las métricas diarias mandan `hora: null` y
+  conservan la clave de 5 campos de siempre. Guardá `hora` como columna
+  nullable y la clave natural como
+  `(granja, galpon, ciclo, metrica, fecha_dato, hora)`.
 - Métricas posibles hoy: `huevos`, `aves_vivas`, `alimento_acumulado`,
   `alimento_dia`, `alimento_por_ave`, `agua_acumulado`, `agua_dia`,
-  `agua_por_ave`, `silo`, `peso`, `mortalidad`, `descartes`. La lista crece:
-  no la hardcodees de forma que un valor nuevo haga fallar la ingesta.
+  `agua_por_ave`, `silo`, `peso`, `mortalidad`, `descartes` (diarias, enteras),
+  y las de clima y ventilación (horarias, con decimales y con `hora`):
+  `temperatura`, `temperatura_min`, `temperatura_max`, `temperatura_exterior`,
+  `humedad`, `co2`, `amoniaco`, `presion_negativa`, `velocidad_aire`. La lista
+  crece: no la hardcodees de forma que un valor nuevo haga fallar la ingesta.
 - El Agente nunca manda el día en curso, solo días cerrados.
 
 **Cómo el Agente interpreta tu respuesta** (esto define tu comportamiento):

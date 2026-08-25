@@ -33,5 +33,41 @@ CANONICAS = {
     "descartes":         ["MANPRODUCTION_ACTUALCULLEDTOTAL.csv", "MANPRODUCTION_TODAYCULLEDTOTAL.csv"],
 }
 
+# Clima y ventilacion: archivos "anchos" (una columna por sensor, una fila por
+# hora, sin columna NUM). Cada fila es un registro HORARIO: se combinan las
+# sondas de la fila con la operacion declarada ('prom', 'min' o 'max') y la
+# hora viaja en el campo `hora`, que entra en la clave del dato.
+#
+# cero_es_nulo: en estos CSV un 0.0 exacto casi siempre es "sensor ausente o
+# desconectado" (un galpon con aves nunca mide 0 de temperatura, humedad o CO2);
+# se descarta para no arrastrar el promedio. Para la temperatura exterior y la
+# presion negativa un 0 si puede ser una medicion real, y se conserva.
+_SENSORES_TEMP = [f"ROOMTEMP{i}" for i in range(1, 13)]
+
+CLIMA = {
+    # temperatura interior (12 sondas por galpon)
+    "temperatura":          {"archivo": "MANPRODUCTION_AVG.csv", "columnas": _SENSORES_TEMP,
+                             "agregar": "prom", "cero_es_nulo": True},
+    "temperatura_min":      {"archivo": "MANPRODUCTION_MIN.csv", "columnas": _SENSORES_TEMP,
+                             "agregar": "min", "cero_es_nulo": True},
+    "temperatura_max":      {"archivo": "MANPRODUCTION_MAX.csv", "columnas": _SENSORES_TEMP,
+                             "agregar": "max", "cero_es_nulo": True},
+    "temperatura_exterior": {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["EXTTEMP"],
+                             "agregar": "prom", "cero_es_nulo": False},
+    # ambiente
+    "humedad":              {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["HUMIDITY_1", "HUMIDITY_2"],
+                             "agregar": "prom", "cero_es_nulo": True},
+    "co2":                  {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["CO2"],
+                             "agregar": "prom", "cero_es_nulo": True},
+    "amoniaco":             {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["NH3_1", "NH3_2"],
+                             "agregar": "prom", "cero_es_nulo": True},
+    # ventilacion (lo que miden los sensores de aire)
+    "presion_negativa":     {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["NEGPRESSURE"],
+                             "agregar": "prom", "cero_es_nulo": False},
+    "velocidad_aire":       {"archivo": "MANPRODUCTION_AVG.csv", "columnas": ["AIRSPEED"],
+                             "agregar": "prom", "cero_es_nulo": True},
+}
+
 # Todos los archivos que el agente "conoce" (para el centinela: lo que NO esta aqui y trae datos, se anota)
-ARCHIVOS_CONOCIDOS = {arch for fuentes in CANONICAS.values() for arch in fuentes}
+ARCHIVOS_CONOCIDOS = {arch for fuentes in CANONICAS.values() for arch in fuentes} \
+                   | {spec["archivo"] for spec in CLIMA.values()}

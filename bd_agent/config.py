@@ -11,6 +11,8 @@ En `token_file` se expanden variables de entorno, asi funciona con
 LoadCredential= de systemd:  token_file: "${CREDENTIALS_DIRECTORY}/core_token"
 """
 import os
+import datetime as dt
+
 import yaml
 
 # Codigos de salida: cada clase de error se distingue desde el monitoreo.
@@ -61,6 +63,7 @@ def cargar(ruta):
     cfg.setdefault("zona_horaria", "UTC")
     cfg.setdefault("intervalo_segundos", 900)
     cfg.setdefault("centinela", True)
+    cfg["clima_desde"] = _fecha_clima_desde(cfg.get("clima_desde"))
     cfg["_ruta_config"] = os.path.abspath(ruta)
 
     destino = cfg["destino"]
@@ -96,6 +99,25 @@ def cargar(ruta):
         raise ErrorConfig(f"actualizacion.modo desconocido: {modo} "
                           f"(esperado manual | automatica)")
     return cfg
+
+
+def _fecha_clima_desde(valor):
+    """
+    `clima_desde` limita desde que fecha se encola el historico de clima
+    (las metricas horarias pesan: 5 anios x 24 horas x 9 metricas x N galpones).
+    Acepta fecha YAML sin comillas (llega como date) o texto AAAA-MM-DD.
+    Ausente -> None: se encola todo el historico.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, dt.datetime):
+        return valor.date()
+    if isinstance(valor, dt.date):
+        return valor
+    try:
+        return dt.date.fromisoformat(str(valor).strip())
+    except ValueError:
+        raise ErrorConfig(f"clima_desde invalida: {valor!r} (esperado AAAA-MM-DD)")
 
 
 def ruta_spool_por_defecto(cfg):
