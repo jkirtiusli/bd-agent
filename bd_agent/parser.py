@@ -145,37 +145,26 @@ _AGREGADORES = {
 }
 
 
-def _clima_por_dia(filas, spec, hoy):
+def _hora_dato(fila):
     """
-    Reduce las filas horarias de un archivo de clima a un valor por dia cerrado.
-    Devuelve {fecha: (valor, ultima_fila_del_dia)}.
+    La hora de la medicion, normalizada a 'HH:MM' (con cero adelante, porque
+    va dentro de la clave y '1:00' y '01:00' serian dos datos distintos).
+    Sale del TIME de la fila; si no trae hora, de la columna HOUR.
     """
-    combinar = _AGREGADORES[spec["agregar"]]
-    por_dia = {}
-    for fila in filas:
-        fecha = fila["FECHA"]
-        if fecha >= hoy:
-            continue  # descarta dia en curso / no cerrado
-        valores = []
-        for col in spec["columnas"]:
-            v = _numero(fila.get(col))
-            if v is None or (spec["cero_es_nulo"] and v == 0):
-                continue
-            valores.append(v)
-        if not valores:
-            continue  # fila sin ninguna sonda valida: no se inventa
-        por_dia.setdefault(fecha, []).append((combinar(valores), fila))
-    return {
-        fecha: (combinar([v for v, _ in horas]), horas[-1][1])
-        for fecha, horas in por_dia.items()
-    }
+    m = re.search(r"(\d{1,2}):(\d{2})", str(fila.get("TIME") or ""))
+    if m:
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+    h = _entero(fila.get("HOUR"))
+    return None if h is None else f"{h:02d}:00"
 
 
-def _procesar_clima(ruta_nave, hoy):
+def _procesar_clima(ruta_nave, hoy, desde=None):
     """
-    Registros de clima/ventilacion de una nave: (metrica, fecha, valor, fila).
-    Los archivos anchos (AVG/MIN/MAX) se leen una sola vez aunque varias
-    metricas salgan del mismo.
+    Registros horarios de clima/ventilacion de una nave:
+    (metrica, archivo, fecha, hora, valor, fila). Cada fila del CSV es una hora;
+    solo se combinan las sondas de la fila (prom/min/max), no se pierde la
+    resolucion horaria. Los archivos anchos (AVG/MIN/MAX) se leen una sola vez
+    aunque varias metricas salgan del mismo.
     """
     tablas = {}
     salida = []
@@ -187,12 +176,29 @@ def _procesar_clima(ruta_nave, hoy):
         filas = tablas[arch]
         if not filas or spec["columnas"][0] not in filas[0]:
             continue  # sin archivo o con otra forma: no se inventa
-        for fecha, (valor, fila) in sorted(_clima_por_dia(filas, spec, hoy).items()):
-            salida.append((metrica, arch, fecha, valor, fila))
+        combinar = _AGREGADORES[spec["agregar"]]
+        for fila in filas:
+            fecha = fila["FECHA"]
+            if fecha >= hoy:
+                continue  # descarta dia en curso / no cerrado
+            if desde is not None and fecha < desde:
+                continue  # clima_desde: el historico viejo no se encola
+            valores = []
+            for col in spec["columnas"]:
+                v = _numero(fila.get(col))
+                if v is None or (spec["cero_es_nulo"] and v == 0):
+                    continue
+                valores.append(v)
+            if not valores:
+                continue  # fila sin ninguna sonda valida: no se inventa
+            hora = _hora_dato(fila)
+            if hora is None:
+                continue  # sin hora no hay identidad: pisaria otras horas del dia
+            salida.append((metrica, arch, fecha, hora, combinar(valores), fila))
     return salida
 
 
-def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
+def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None, clima_desde=None):
     """
     Devuelve (registros, aviso_centinela) para una nave.
     Descarta el dia en curso (fecha == hoy).
@@ -223,24 +229,28 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
                 "edad_dia": _entero(fila.get("PRODDAY")),
                 "semana": _entero(fila.get("PRODWEEK")),
                 "fuente": archivo,
+                "hora": None,  # las metricas de produccion son un valor por dia
             })
 
-    # Clima y ventilacion: archivos anchos reducidos a un valor por dia.
-    # El valor va con decimales (una temperatura no es una cuenta entera).
-    for metrica, archivo, fecha, valor, fila in _procesar_clima(ruta_nave, hoy):
+    # Clima y ventilacion: archivos anchos con una fila por hora. Cada hora es
+    # un registro (con `hora`, que entra en la clave) y el valor va con
+    # decimales: una temperatura no es una cuenta entera.
+    for metrica, archivo, fecha, hora, valor, fila in \
+            _procesar_clima(ruta_nave, hoy, desde=clima_desde):
         registros.append({
             "granja": granja,
             "galpon": galpon,
             "ciclo": ciclo,
             "metrica": metrica,
             "fecha_dato": fecha.isoformat(),
-            "hora_cierre": _hora_cierre(fila.get("TIME")),
+            "hora_cierre": None,
             "zona_horaria": zona_horaria,
             "capturado_en": capturado_en,
             "valor": round(valor, 2),
             "edad_dia": _entero(fila.get("PRODDAY")),
             "semana": _entero(fila.get("PRODWEEK")),
             "fuente": archivo,
+            "hora": hora,
         })
 
     # Centinela: archivos con datos que NO estan en la lista canonica
@@ -254,7 +264,7 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None):
     return registros, aviso
 
 
-def escanear(base_csv, granja, zona_horaria, hoy=None):
+def escanear(base_csv, granja, zona_horaria, hoy=None, clima_desde=None):
     """Recorre todas las naves. Devuelve (registros, avisos_por_nave)."""
     salida, avisos = [], {}
     if not os.path.isdir(base_csv):
@@ -267,7 +277,8 @@ def escanear(base_csv, granja, zona_horaria, hoy=None):
         if not galpon:
             continue
         try:
-            regs, aviso = procesar_nave(ruta_nave, granja, zona_horaria, hoy=hoy)
+            regs, aviso = procesar_nave(ruta_nave, granja, zona_horaria, hoy=hoy,
+                                        clima_desde=clima_desde)
         except Exception as e:
             # Un galpon roto no puede hacer perder los otros siete.
             log.error(f"[parser] fallo el galpon {carpeta}: {e}")

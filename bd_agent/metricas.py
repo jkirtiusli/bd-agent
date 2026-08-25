@@ -34,9 +34,9 @@ CANONICAS = {
 }
 
 # Clima y ventilacion: archivos "anchos" (una columna por sensor, una fila por
-# hora, sin columna NUM). El parser los reduce a un valor por dia — el modelo
-# canonico es diario — combinando primero los sensores de cada fila y despues
-# las filas del dia con la misma operacion ('prom', 'min' o 'max').
+# hora, sin columna NUM). Cada fila es un registro HORARIO: se combinan las
+# sondas de la fila con la operacion declarada ('prom', 'min' o 'max') y la
+# hora viaja en el campo `hora`, que entra en la clave del dato.
 #
 # cero_es_nulo: en estos CSV un 0.0 exacto casi siempre es "sensor ausente o
 # desconectado" (un galpon con aves nunca mide 0 de temperatura, humedad o CO2);

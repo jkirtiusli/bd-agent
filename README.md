@@ -171,17 +171,22 @@ todavia no se mapean, con sus columnas, rango de fechas y un valor de muestra.
   en `bd_agent/metricas.py` -> diccionario `CANONICAS`.
 - Si es un archivo "ancho" de clima (una columna por sensor y una fila por
   hora, como `MANPRODUCTION_AVG/MIN/MAX.csv`), va en el diccionario `CLIMA`
-  del mismo archivo: se declara que columnas leer y como agregar el dia
-  (`prom`/`min`/`max`). El parser lo reduce a un valor por dia cerrado.
-  Asi se levantan hoy temperatura (promedio, minima, maxima y exterior),
-  humedad, CO2, amoniaco, presion negativa y velocidad de aire.
+  del mismo archivo: se declara que columnas leer y como combinar las sondas
+  de cada fila (`prom`/`min`/`max`). Cada hora es un registro, con el campo
+  `hora` dentro de la clave. Asi se levantan hoy temperatura (promedio,
+  minima, maxima y exterior), humedad, CO2, amoniaco, presion negativa y
+  velocidad de aire. El historico horario pesa: `clima_desde` en config.yaml
+  limita desde que fecha se encola.
 - Si trae otra forma distinta, no alcanza con mapearlo: hay que extender el
   parser. `--explorar` lo avisa explicitamente.
 
 ## Estructura del dato normalizado
 
-    granja, galpon, ciclo, metrica, fecha_dato, hora_cierre,
+    granja, galpon, ciclo, metrica, fecha_dato, hora, hora_cierre,
     zona_horaria, capturado_en, valor, edad_dia, semana, fuente, clave
+
+`hora` viene solo en las metricas de clima (registros horarios) y entra en la
+`clave`; en las diarias va `null` y la clave es la de siempre.
 
 ## Desarrollo
 

@@ -31,6 +31,19 @@ def test_clave_distingue_metrica_y_dia():
     assert bd_spool.clave(reg()) != bd_spool.clave(reg(fecha="2026-08-09"))
 
 
+def test_clave_intradiaria_distingue_horas():
+    """El clima manda `hora`: cada hora del dia es un dato distinto."""
+    una = dict(reg(metrica="temperatura"), hora="01:00")
+    otra = dict(reg(metrica="temperatura"), hora="02:00")
+    assert bd_spool.clave(una) != bd_spool.clave(otra)
+
+
+def test_clave_diaria_no_cambia_con_hora_ausente_o_none():
+    """Regresion: los registros diarios viejos no traian `hora`. Con `hora`
+    en None la clave tiene que ser identica, o todo se reenviaria duplicado."""
+    assert bd_spool.clave(reg()) == bd_spool.clave(dict(reg(), hora=None))
+
+
 def test_encolar_y_tomar(sp):
     assert sp.encolar([reg(), reg(metrica="agua_dia")]) == 2
     bloque = sp.tomar(10)

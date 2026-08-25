@@ -13,6 +13,8 @@ Dos tablas:
 Cada registro tiene:
   clave      = sha256(granja|galpon|ciclo|metrica|fecha_dato)
                identidad del dato. Es la que el Core usa para hacer UPSERT.
+               Si el registro es intradiario (clima), la hora se suma al final:
+               sha256(...|fecha_dato|hora). Los diarios no cambian de clave.
   valor_hash = sha256 de los campos con contenido (valor, edad, semana, ...)
                si rio arriba corrigen un numero, cambia el hash y se reenvia;
                si el dato es identico, no se reenvia.
@@ -52,9 +54,16 @@ CREATE INDEX IF NOT EXISTS idx_confirmados_fecha ON confirmados(fecha_dato);
 
 
 def clave(registro):
-    """Identidad del dato: misma metrica, mismo dia, misma nave -> misma clave."""
+    """
+    Identidad del dato: misma metrica, mismo dia, misma nave -> misma clave.
+    Un registro intradiario trae `hora` y la suma a la identidad; los diarios
+    (hora ausente o None) conservan la clave historica de siempre.
+    """
     crudo = "|".join(str(registro.get(c) if registro.get(c) is not None else "")
                      for c in CAMPOS_CLAVE)
+    hora = registro.get("hora")
+    if hora:
+        crudo += f"|{hora}"
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
 
 

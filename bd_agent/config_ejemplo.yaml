@@ -9,6 +9,12 @@ ruta_csv: 'C:\Users\PC\OneDrive\Escritorio\BDCopy\BackUp\csv'
 intervalo_segundos: 900    # solo aplica al modo demonio (sin --once)
 centinela: true            # avisa en el log si aparecen datos nuevos sin mapear
 
+# Desde que fecha encolar el historico de CLIMA (temperatura, humedad, CO2,
+# ventilacion...). Son registros por HORA y los CSV traen anios: sin limite,
+# la primera corrida puede encolar millones de registros. Las metricas diarias
+# de produccion (huevos, alimento...) no se ven afectadas por esta clave.
+# clima_desde: '2025-01-01'
+
 # Cola local (store-and-forward). Es lo que hace que un corte de red no pierda
 # datos: lo leido se guarda en disco y se entrega cuando el Core vuelve.
 # Por defecto se crea AL LADO de este archivo, que es lo que casi siempre
