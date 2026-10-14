@@ -180,3 +180,68 @@ def test_clima_sin_time_usa_la_columna_hour(tmp_path):
     registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
     assert [(r["metrica"], r["hora"]) for r in registros] == \
         [("temperatura", "07:00")]
+
+
+# ---------------- huevos por contador (EGGCOUNTER) ----------------
+
+def _cabecera_contadores():
+    cols = [f"C_{f:02d}_{p:02d}_{c}" for f in range(1, 5)
+            for p in range(1, 3) for c in (1, 2)]
+    cols += ["C_01_00_1", "C_01_00_2"]
+    return cols, ("DATE\tTIME\tDAY\tPRODDAY\tPRODWEEK\tNUMROW\tHOUSENAME\t"
+                  + "\t".join(cols))
+
+
+def _fila_contadores(fecha, valores):
+    cols, _ = _cabecera_contadores()
+    f = fecha.strftime("%d.%m.%Y")
+    celdas = [str(valores.get(c, 0)) for c in cols]
+    return (f"{f}\t{fecha.isoformat()} 22:00:11\t7\t518\t74\t4\tZ10\t"
+            + "\t".join(celdas))
+
+
+def test_contadores_un_registro_por_dia_con_el_desglose(tmp_path):
+    ayer = dt.date.today() - dt.timedelta(days=1)
+    _cols, cab = _cabecera_contadores()
+    # Z10 del 7/10/2026 tal cual lo exporta BD-Copy: la fila 2 contador 1
+    # cuenta de mas. El piso 00 no es un contador de cinta.
+    valores = {"C_01_01_1": 10991, "C_01_01_2": 11026,
+               "C_02_01_1": 14901, "C_02_01_2": 10829,
+               "C_03_01_1": 11176, "C_03_01_2": 11179,
+               "C_04_01_1": 11346, "C_04_01_2": 10607,
+               "C_01_00_1": 5}
+    nave(tmp_path, archivos={"MANPRODUCTION_EGGCOUNTER.csv":
+                             f"{cab}\n{_fila_contadores(ayer, valores)}"})
+    registros, avisos = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    regs = [r for r in registros if r["metrica"] == "huevos_contadores"]
+    assert len(regs) == 1
+    r = regs[0]
+    assert r["fecha_dato"] == ayer.isoformat()
+    assert r["valor"] == 92055
+    assert r["contadores"]["C_02_01_1"] == 14901
+    assert "C_01_00_1" not in r["contadores"]       # piso 00: no es cinta
+    assert "C_01_02_1" not in r["contadores"]       # contador sin uso (0)
+    assert len(r["contadores"]) == 8
+    assert (r["hora_cierre"], r["edad_dia"], r["semana"]) == ("22:00", 518, 74)
+    assert r["fuente"] == "MANPRODUCTION_EGGCOUNTER.csv"
+    # sin columna NUM no compite con TODAYEGG por la metrica `huevos`
+    assert not any(r["metrica"] == "huevos" for r in registros)
+    assert avisos == {}
+
+
+def test_contadores_descarta_dia_en_curso_y_dias_en_cero(tmp_path):
+    hoy = dt.date.today()
+    ayer = hoy - dt.timedelta(days=1)
+    anteayer = hoy - dt.timedelta(days=2)
+    _cols, cab = _cabecera_contadores()
+    contenido = "\n".join([
+        cab,
+        _fila_contadores(anteayer, {}),                    # domingo: todo 0
+        _fila_contadores(ayer, {"C_01_01_1": 100}),
+        _fila_contadores(hoy, {"C_01_01_1": 50}),          # dia abierto
+    ])
+    nave(tmp_path, archivos={"MANPRODUCTION_EGGCOUNTER.csv": contenido})
+    registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    fechas = [r["fecha_dato"] for r in registros
+              if r["metrica"] == "huevos_contadores"]
+    assert fechas == [ayer.isoformat()]

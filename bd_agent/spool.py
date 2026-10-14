@@ -69,8 +69,13 @@ def clave(registro):
 
 def valor_hash(registro):
     """Huella del contenido. Cambia solo si cambio un valor real del dato."""
-    crudo = json.dumps({c: registro.get(c) for c in CAMPOS_VALOR},
-                       sort_keys=True, ensure_ascii=False)
+    datos = {c: registro.get(c) for c in CAMPOS_VALOR}
+    # El desglose por contador solo lo traen los `huevos_contadores`: si un
+    # contador cambia, el dato se reenvia. Se suma SOLO cuando esta, para que
+    # el hash de los demas registros no cambie y no se reenvie todo el historico.
+    if registro.get("contadores") is not None:
+        datos["contadores"] = registro["contadores"]
+    crudo = json.dumps(datos, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
 
 

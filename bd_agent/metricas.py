@@ -68,6 +68,17 @@ CLIMA = {
                              "agregar": "prom", "cero_es_nulo": True},
 }
 
+# Conteo de huevos POR CONTADOR (cada cinta/fila del galpon). El total del dia
+# ya viaja como `huevos` (TODAYEGG, columna NUM); este archivo trae el mismo
+# dia desglosado en columnas C_<fila>_<piso>_<contador> (C_02_01_1 = fila 2,
+# piso 1, contador 1), que es lo que el AMACS muestra en "Contador huev.".
+# Sirve para que el Core detecte el contador que cuenta mal y lo reemplace por
+# el promedio de los demas. Viaja como UN registro por dia con el desglose en
+# `contadores`; los contadores sin uso marcan 0 y no se mandan.
+CONTADORES_HUEVOS = {"metrica": "huevos_contadores",
+                     "archivo": "MANPRODUCTION_EGGCOUNTER.csv"}
+
 # Todos los archivos que el agente "conoce" (para el centinela: lo que NO esta aqui y trae datos, se anota)
 ARCHIVOS_CONOCIDOS = {arch for fuentes in CANONICAS.values() for arch in fuentes} \
-                   | {spec["archivo"] for spec in CLIMA.values()}
+                   | {spec["archivo"] for spec in CLIMA.values()} \
+                   | {CONTADORES_HUEVOS["archivo"]}

@@ -22,7 +22,7 @@ import csv
 import logging
 import datetime as dt
 
-from bd_agent.metricas import CANONICAS, CLIMA, ARCHIVOS_CONOCIDOS
+from bd_agent.metricas import CANONICAS, CLIMA, CONTADORES_HUEVOS, ARCHIVOS_CONOCIDOS
 
 log = logging.getLogger("agente.parser")
 
@@ -198,6 +198,45 @@ def _procesar_clima(ruta_nave, hoy, desde=None):
     return salida
 
 
+# C_<fila>_<piso>_<contador>. El piso 00 (C_01_00_1..4) no es un contador de
+# cinta: en las granjas vistas viene siempre en 0 y no se sabe que mide, asi
+# que no se manda.
+_RE_CONTADOR = re.compile(r"^C_(\d{2})_(\d{2})_(\d+)$")
+
+
+def _procesar_contadores(ruta_nave, hoy):
+    """
+    Desglose diario de huevos por contador: (fecha, {columna: huevos}, fila).
+    Solo los contadores con lectura (> 0): los sin uso marcan 0 siempre, y un
+    0 suelto no se distingue de "no conto"; el Core decide con los que hay.
+    """
+    arch = CONTADORES_HUEVOS["archivo"]
+    ruta = os.path.join(ruta_nave, arch)
+    if not os.path.exists(ruta):
+        return []
+    filas = _leer_tabla(ruta)
+    if not filas:
+        return []
+    columnas = [c for c in filas[0]
+                if (m := _RE_CONTADOR.match(c)) and m.group(2) != "00"]
+    if not columnas:
+        return []  # otra forma de archivo: no se inventa
+    por_fecha = {}
+    for fila in filas:
+        fecha = fila["FECHA"]
+        if fecha >= hoy:
+            continue  # descarta dia en curso / no cerrado
+        contadores = {}
+        for col in columnas:
+            v = _entero(fila.get(col))
+            if v:  # None o 0: contador sin lectura
+                contadores[col] = v
+        if contadores:
+            # una fila por dia; si BD-Copy repite el dia, gana la ultima
+            por_fecha[fecha] = (contadores, fila)
+    return [(f, c, fila) for f, (c, fila) in sorted(por_fecha.items())]
+
+
 def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None, clima_desde=None):
     """
     Devuelve (registros, aviso_centinela) para una nave.
@@ -251,6 +290,26 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None, clima_desde=None):
             "semana": _entero(fila.get("PRODWEEK")),
             "fuente": archivo,
             "hora": hora,
+        })
+
+    # Huevos por contador: un registro por dia con el desglose. `valor` es la
+    # suma, para leerlo de un vistazo; el total oficial sigue siendo `huevos`.
+    for fecha, contadores, fila in _procesar_contadores(ruta_nave, hoy):
+        registros.append({
+            "granja": granja,
+            "galpon": galpon,
+            "ciclo": ciclo,
+            "metrica": CONTADORES_HUEVOS["metrica"],
+            "fecha_dato": fecha.isoformat(),
+            "hora_cierre": _hora_cierre(fila.get("TIME")),
+            "zona_horaria": zona_horaria,
+            "capturado_en": capturado_en,
+            "valor": sum(contadores.values()),
+            "edad_dia": _entero(fila.get("PRODDAY")),
+            "semana": _entero(fila.get("PRODWEEK")),
+            "fuente": CONTADORES_HUEVOS["archivo"],
+            "hora": None,
+            "contadores": contadores,
         })
 
     # Centinela: archivos con datos que NO estan en la lista canonica
