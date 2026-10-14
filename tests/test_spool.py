@@ -113,3 +113,17 @@ def test_sobrevive_a_reabrir_el_archivo(tmp_path):
         s.encolar([reg()])
     with bd_spool.Spool(ruta) as s:
         assert s.estado()["pendientes_en_cola"] == 1
+
+
+def test_valor_hash_de_los_registros_sin_contadores_no_cambia():
+    """Sumar `contadores` al hash no puede cambiar la huella de los registros
+    que no lo traen: si cambiara, la proxima corrida reenviaria todo el
+    historico confirmado."""
+    assert bd_spool.valor_hash(reg()) == bd_spool.valor_hash(
+        dict(reg(), contadores=None))
+
+
+def test_valor_hash_cambia_si_cambia_un_contador():
+    a = dict(reg(metrica="huevos_contadores"), contadores={"C_01_01_1": 10})
+    b = dict(a, contadores={"C_01_01_1": 11})
+    assert bd_spool.valor_hash(a) != bd_spool.valor_hash(b)
