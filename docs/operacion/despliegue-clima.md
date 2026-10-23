@@ -1,7 +1,12 @@
 # Runbook: despliegue del clima horario en una granja
 
+> **2026-10-23: la granja cambio de PC.** El host SSH ahora es
+> `Usuario@pc-astillas-2` (los comandos de abajo ya lo usan); los CSV estan en
+> `C:\Users\Usuario\Documents\BDCopy\BackUp\csv`. Detalle en
+> `docs/operacion/granja-astillas.md`.
+
 Estado al 2026-08-25 (granja **astillas_de_plata**, host SSH `PC@pc-astillas`,
-instalacion en `C:\farmapi`): el exe con clima horario ya esta instalado y
+la PC vieja; instalacion en `C:\farmapi`): el exe con clima horario ya esta instalado y
 `--explorar` muestra AVG/MIN/MAX mapeados. `clima_desde` quedo en `2026-04-20`.
 **Pendiente antes de la primera corrida con clima: que el Core tenga la columna
 `hora`** (ver "Orden de despliegue").
@@ -23,7 +28,7 @@ instalacion en `C:\farmapi`): el exe con clima horario ya esta instalado y
    navegador. Es un ZIP: descomprimirlo (adentro esta `agente-bdcopy.exe`).
 2. Desde la maquina local (NO desde la sesion SSH), en la carpeta del exe:
 
-       scp agente-bdcopy.exe PC@pc-astillas:C:/farmapi/agente-bdcopy.exe.nuevo
+       scp agente-bdcopy.exe Usuario@pc-astillas-2:C:/farmapi/agente-bdcopy.exe.nuevo
 
    Se copia como `.nuevo` porque el exe en uso esta bloqueado por Windows y
    asi ademas queda el viejo para volver atras.
@@ -63,9 +68,9 @@ La sesion SSH cae en CMD, sin editor. Opciones:
 
 - **Para ediciones grandes**, ida y vuelta con scp desde la maquina local:
 
-      scp PC@pc-astillas:C:/farmapi/config.yaml .
+      scp Usuario@pc-astillas-2:C:/farmapi/config.yaml .
       (editar local)
-      scp config.yaml PC@pc-astillas:C:/farmapi/config.yaml
+      scp config.yaml Usuario@pc-astillas-2:C:/farmapi/config.yaml
 
 Siempre cerrar con:
 
