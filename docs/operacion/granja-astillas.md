@@ -41,9 +41,50 @@ personal. Para sacarla: borrarla en el admin de Tailscale y borrar
 | `AgenteBDCopy` | cada hora + al arrancar, SYSTEM | `scripts\correr_agente.bat --tarea` |
 | `AgenteBDCopy-Heartbeat` | cada 5 min, SYSTEM | `--solo-heartbeat` |
 | `AgenteBDCopy-Update` | diaria 03:14, SYSTEM | `--actualizar --desatendido` (modo manual) |
+| `BackupSupabase` | diaria 02:00, SYSTEM, 3 reintentos | baja el backup de Supabase (ver abajo) |
 
 `instalar_tarea.ps1` crea `AgenteBDCopy` y `-Update`; el latido se crea a
 mano (ver el procedimiento de mudanza).
+
+## Segunda copia del backup de Supabase
+
+Desde 2026-10-23 esta PC guarda una copia del backup diario del Core, fuera de
+Hetzner. El backup lo sigue haciendo el VPS (`core_v1`:
+`deploy/vps-scripts/backup-storagebox.sh`, 04:00 UTC = 01:00 AR, `pg_dumpall`
++ storage + `.env`, cifrado GPG AES256) y lo sube al Storage Box `u607407`.
+
+    Storage Box /supabase-backups  --SFTP puerto 23, solo lectura-->  C:\backups-supabase\AAAA-MM-DD_HHMMSS\
+                                       (tarea BackupSupabase, 02:00 AR)
+
+- **Script**: `scripts/bajar_backups_supabase.ps1` de este repo, instalado en
+  `C:\ProgramData\backup-supabase\` junto con su clave SSH (`id_ed25519`) y
+  `known_hosts`. Esa carpeta y `C:\backups-supabase` son solo de SYSTEM y
+  Administradores. La clave privada tiene que tener **dueño SYSTEM** y ningun
+  usuario en su ACL (solo SYSTEM y Administradores); si no, el ssh de Windows
+  corriendo como SYSTEM la ignora ("UNPROTECTED PRIVATE KEY FILE"):
+
+      icacls C:\ProgramData\backup-supabase\id_ed25519 /setowner *S-1-5-18
+      icacls C:\ProgramData\backup-supabase\id_ed25519 /inheritance:r /grant *S-1-5-18:F /grant *S-1-5-32-544:F
+- **Acceso**: subcuenta `u607407-sub1` del Storage Box — base
+  `supabase-backups`, **Read-Only**, SSH, External reachability (sin eso
+  rechaza todo lo que venga de fuera de Hetzner: `Authentications that can
+  continue:` vacio). Sin contraseña: entra solo con la clave de esta PC,
+  cargada en `supabase-backups/.ssh/authorized_keys` del Storage Box (la
+  retencion del VPS solo borra carpetas con fecha, no toca `.ssh`).
+- **Cifrado**: los `.gpg` llegan y quedan cifrados. La passphrase **no** esta
+  en esta PC: la granja tiene los archivos pero no puede abrirlos. Ojo: es la
+  base de **todo** el Core (todas las granjas) y el `.env` del VPS.
+- **Retencion local**: 30 dias (~12 MB por copia). Cada copia baja a
+  `_parcial` y solo pasa a su carpeta con fecha si todos los archivos tienen el
+  tamaño que reporta el Storage Box.
+- **Ver como anda**: `C:\backups-supabase\backup.log` (ultima linea
+  `=== OK ...` o `FALLO: ...`) y "Ultimo resultado" de la tarea (0 = ok).
+- **Revocar**: borrar `supabase-backups/.ssh/authorized_keys` en el Storage Box
+  (o la subcuenta), y la tarea `BackupSupabase`.
+
+Restaurar desde esta copia es igual que desde el Storage Box (ver
+`docs/RUNBOOK-VPS.md` de `core_v1`, "Backups y restore"): descifrar con la
+passphrase en una maquina de confianza, nunca en esta PC.
 
 ## Puntos debiles conocidos
 
