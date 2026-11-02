@@ -245,3 +245,55 @@ def test_contadores_descarta_dia_en_curso_y_dias_en_cero(tmp_path):
     fechas = [r["fecha_dato"] for r in registros
               if r["metrica"] == "huevos_contadores"]
     assert fechas == [ayer.isoformat()]
+
+
+# ---------------- TODAYEGG con el total (NUM) en 0 ----------------
+
+_PISOS = ["F0101", "F010101", "F010102", "F0102", "F010201", "F010202",
+          "F0201", "F020101", "F020102"]
+_CAB_TODAYEGG = "DATE\tTIME\tPRODWEEK\tPRODDAY\tNUM\t" + "\t".join(_PISOS)
+
+
+def _fila_todayegg(fecha, num, pisos):
+    """pisos: {F<fila><piso>: huevos}; los contadores del piso se reparten."""
+    celdas = []
+    for col in _PISOS:
+        if len(col) == 5:
+            celdas.append(str(pisos.get(col, 0)))
+        else:  # F010101 / F010102: mitades del piso, no se suman de nuevo
+            celdas.append(str(pisos.get(col[:5], 0) // 2))
+    return (f"{fecha.strftime('%d.%m.%Y')}\t{fecha.isoformat()} 22:00:10\t571\t3993\t"
+            f"{num}\t" + "\t".join(celdas))
+
+
+def test_num_en_cero_usa_la_suma_de_los_pisos(tmp_path):
+    """Z3 del 2026-10-29: el PLC dejo NUM=0 con los pisos llenos."""
+    hoy = dt.date.today()
+    ayer, anteayer = hoy - dt.timedelta(days=1), hoy - dt.timedelta(days=2)
+    pisos = {"F0101": 2775, "F0102": 2616, "F0201": 2766}
+    contenido = "\n".join([
+        _CAB_TODAYEGG,
+        _fila_todayegg(anteayer, 8157, pisos),   # dia normal: NUM manda
+        _fila_todayegg(ayer, 0, pisos),
+    ])
+    nave(tmp_path, archivos={"MANPRODUCTION_TODAYEGG.csv": contenido})
+    registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    huevos = {r["fecha_dato"]: r["valor"] for r in registros
+              if r["metrica"] == "huevos"}
+    assert huevos == {anteayer.isoformat(): 8157, ayer.isoformat(): 8157}
+
+
+def test_num_en_cero_sin_pisos_sigue_en_cero(tmp_path):
+    """El domingo no se junta: NUM 0 y pisos en 0 es un 0 de verdad."""
+    hoy = dt.date.today()
+    ayer, anteayer = hoy - dt.timedelta(days=1), hoy - dt.timedelta(days=2)
+    contenido = "\n".join([
+        _CAB_TODAYEGG,
+        _fila_todayegg(anteayer, 500, {"F0101": 500}),
+        _fila_todayegg(ayer, 0, {}),
+    ])
+    nave(tmp_path, archivos={"MANPRODUCTION_TODAYEGG.csv": contenido})
+    registros, _ = bd_parser.escanear(str(tmp_path), "g", "UTC")
+    huevos = {r["fecha_dato"]: r["valor"] for r in registros
+              if r["metrica"] == "huevos"}
+    assert huevos[ayer.isoformat()] == 0
