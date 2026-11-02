@@ -10,7 +10,8 @@ se declaran como metricas separadas para que el dashboard elija.
 """
 
 CANONICAS = {
-    # huevos
+    # huevos (si el PLC deja NUM en 0 con los pisos llenos, vale la suma de
+    # los pisos: parser._huevos_por_piso)
     "huevos":            ["MANPRODUCTION_TODAYEGG.csv", "MANPRODUCTION_EGGCOUNTER.csv"],
     # poblacion
     "aves_vivas":        ["MANPRODUCTION_ACTUALBIRDS.csv", "MANPRODUCTION_STOREBIRDS.csv"],

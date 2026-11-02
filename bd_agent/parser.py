@@ -126,6 +126,24 @@ def _tiene_datos(filas):
     return any((_numero(f.get("NUM")) or 0) != 0 for f in filas)
 
 
+# F<fila><piso> del TODAYEGG: huevos de UN piso de UNA fila (F0102 = fila 1,
+# piso 2). Los de 6 digitos (F010201) son los contadores de ese piso: sumarlos
+# tambien contaria todo dos veces.
+_RE_PISO = re.compile(r"^F\d{4}$")
+
+
+def _huevos_por_piso(fila):
+    """Suma de los pisos de la fila del TODAYEGG, o None si no hay ninguno > 0.
+
+    Hay dias en que el PLC deja el total (NUM) en 0 aunque los pisos tienen los
+    huevos: el 2026-10-29 paso en 12 de 15 galpones de Astillas. En los dias
+    normales esta suma es igual a NUM y a la del EGGCOUNTER (verificado ese dia
+    galpon por galpon), asi que es el mismo conteo y no una estimacion."""
+    total = sum(_entero(v) or 0 for k, v in fila.items()
+                if isinstance(k, str) and _RE_PISO.match(k))
+    return total or None
+
+
 def _elegir_fuente(ruta_nave, fuentes):
     """Devuelve (filas, archivo) de la primera fuente con datos; o (None, None)."""
     for arch in fuentes:
@@ -255,6 +273,9 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None, clima_desde=None):
             fecha = fila["FECHA"]
             if fecha >= hoy:
                 continue  # descarta dia en curso / no cerrado
+            valor = _entero(fila.get("NUM"))
+            if metrica == "huevos" and not valor:
+                valor = _huevos_por_piso(fila) or valor
             registros.append({
                 "granja": granja,
                 "galpon": galpon,
@@ -264,7 +285,7 @@ def procesar_nave(ruta_nave, granja, zona_horaria, hoy=None, clima_desde=None):
                 "hora_cierre": _hora_cierre(fila.get("TIME")),
                 "zona_horaria": zona_horaria,
                 "capturado_en": capturado_en,
-                "valor": _entero(fila.get("NUM")),
+                "valor": valor,
                 "edad_dia": _entero(fila.get("PRODDAY")),
                 "semana": _entero(fila.get("PRODWEEK")),
                 "fuente": archivo,
