@@ -41,9 +41,102 @@ personal. Para sacarla: borrarla en el admin de Tailscale y borrar
 | `AgenteBDCopy` | cada hora + al arrancar, SYSTEM | `scripts\correr_agente.bat --tarea` |
 | `AgenteBDCopy-Heartbeat` | cada 5 min, SYSTEM | `--solo-heartbeat` |
 | `AgenteBDCopy-Update` | diaria 03:14, SYSTEM | `--actualizar --desatendido` (modo manual) |
+| `DatosGranja` | diaria 02:00 (hora AR), 3 reintentos, SYSTEM | `powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1`: baja el paquete de datos (ver "Paquete de datos de la granja") |
 
 `instalar_tarea.ps1` crea `AgenteBDCopy` y `-Update`; el latido se crea a
 mano (ver el procedimiento de mudanza).
+
+## Paquete de datos de la granja
+
+Copia abierta de los datos del Core para que la granja los tenga sin
+depender de nosotros. **No esta cifrada**: quien entre a la PC puede abrirla.
+El backup cifrado completo queda solo en Hetzner (core_v1:
+`deploy/vps-scripts/backup-storagebox.sh`) y nunca baja a esta PC.
+
+Flujo:
+
+    VPS (core_v1: deploy/vps-scripts/paquete-granja.sh, cron 04:20 UTC)
+      | arma datos.sql.gz, csv.zip, LEEME.txt, MANIFIESTO.txt
+      v  carpeta AAAA-MM-DD_HHMMSS en el Storage Box de Hetzner
+    PC de la granja: tarea DatosGranja (SYSTEM) -> C:\datos-granja\<carpeta>
+      SFTP puerto 23, solo lectura; las 7 carpetas mas nuevas
+
+| Que | Valor |
+|---|---|
+| Script | `scripts\bajar_datos_granja.ps1` (parametros: `-Usuario`, `-Servidor`, `-Destino`, `-Clave`, `-Copias 7`) |
+| Carpeta | `C:\datos-granja` (una subcarpeta por paquete, `bajada.log`) |
+| Tarea | `DatosGranja`, diaria 02:00 hora AR, 3 reintentos, SYSTEM. Accion: `powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1` |
+| Instalado en | `C:\ProgramData\datos-granja\bajar_datos_granja.ps1` (copia de `scripts\bajar_datos_granja.ps1`; hay que recopiarla si el script cambia) |
+| Subcuenta | `u607407-sub1` del Storage Box, base `granja-datos`, Read-Only, SSH habilitado, "External reachability" activada |
+| Clave SSH | `C:\ProgramData\datos-granja\id_ed25519` (propia de esta PC), con `known_hosts` al lado |
+| Ping | URL en `C:\ProgramData\datos-granja\ping-url.txt` (una linea) |
+
+Cada paquete baja a `_parcial` y solo pasa a su carpeta con fecha si
+`MANIFIESTO.txt` es valido, trae `datos.sql.gz`, `csv.zip` y `LEEME.txt`, cada
+archivo coincide en tamano y SHA256 y no sobra ningun otro. Una carpeta con
+fecha es siempre un paquete verificado. Si algo falla no queda nada en una
+carpeta con fecha, se escribe `FALLO` en el log y la tarea sale con 1.
+
+Horario: 02:00 AR son las 05:00 UTC, despues del cron de las 04:20 UTC que
+arma el paquete. No poner la tarea antes de eso: bajaria en silencio el
+paquete del dia anterior.
+
+Instalacion (como administrador, en la PC):
+
+- La carpeta de configuracion solo la leen SYSTEM y Administradores:
+  `ping-url.txt` (la URL del check es un secreto) y el lote de sftp no pueden
+  ser legibles ni escribibles por usuarios comunes.
+
+      icacls C:\ProgramData\datos-granja /inheritance:r /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F"
+
+- La clave privada tiene que ser del dueno SYSTEM y solo SYSTEM y
+  Administradores pueden tocarla, o ssh la rechaza al correr como SYSTEM:
+
+      icacls C:\ProgramData\datos-granja\id_ed25519 /setowner *S-1-5-18
+      icacls C:\ProgramData\datos-granja\id_ed25519 /inheritance:r /grant *S-1-5-18:F /grant *S-1-5-32-544:F
+
+- El script crea `C:\datos-granja` pero no le pone permisos. Que SYSTEM y
+  Administradores tengan control total y la granja lea con su usuario (grupo
+  Usuarios), sin escritura para usuarios comunes:
+
+      icacls C:\datos-granja /inheritance:r /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /grant "*S-1-5-32-545:(OI)(CI)RX"
+
+- Registrar la tarea (mismo estilo que `AgenteBDCopy-Heartbeat`): diaria 02:00,
+  SYSTEM, `StartWhenAvailable` (si la PC estaba apagada a las 02:00 corre al
+  prenderse) y 3 reintentos cada 30 minutos si sale con error:
+
+      $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1'
+      $t = New-ScheduledTaskTrigger -Daily -At 02:00
+      $p = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+      $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30)
+      Register-ScheduledTask -TaskName DatosGranja -Action $a -Trigger $t -Principal $p -Settings $s
+
+- `ping-url.txt`: la URL del check (se le quitan espacios y la `/` final). Se
+  llama a `<url>` si salio bien y a `<url>/fail` si fallo. La URL no se escribe
+  en el log. Si el archivo falta o el ping falla, queda una linea en el log y
+  el resultado de la tarea no cambia.
+
+- Crear el check de la PC en Healthchecks (periodo 1 dia, gracia 1 h, con el
+  mismo canal de aviso que el backup) es un paso de la instalacion, no un
+  extra: sin `ping-url.txt` la bajada sigue funcionando pero nadie avisa si
+  deja de correr o falla.
+
+Como revisar:
+
+    ssh Usuario@pc-astillas-2
+    powershell -Command "Get-Content C:\datos-granja\bajada.log -Tail 5; Get-ScheduledTaskInfo DatosGranja | ft LastRunTime,LastTaskResult"
+
+La ultima linea del log es la del ping, asi que entre las ultimas lineas tiene
+que estar `=== OK: ...` (o `FALLO: ...`, que dice por que) y el ultimo
+resultado de la tarea tiene que ser 0.
+
+Como revocar: en el panel de Hetzner, borrar la subcuenta `u607407-sub1` (o
+sacarle la clave de `granja-datos/.ssh/authorized_keys`, editandolo con la
+**cuenta principal** del Storage Box, porque la subcuenta es de solo lectura);
+en la PC, deshabilitar la tarea (`Disable-ScheduledTask DatosGranja`) y borrar
+`C:\ProgramData\datos-granja`; y **pausar el check de Healthchecks**, si no
+avisa que falta la bajada. Lo ya bajado en `C:\datos-granja` queda hasta que
+se borre a mano.
 
 ## Puntos debiles conocidos
 
