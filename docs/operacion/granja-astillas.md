@@ -83,34 +83,60 @@ paquete del dia anterior.
 
 Instalacion (como administrador, en la PC):
 
+- La carpeta de configuracion solo la leen SYSTEM y Administradores:
+  `ping-url.txt` (la URL del check es un secreto) y el lote de sftp no pueden
+  ser legibles ni escribibles por usuarios comunes.
+
+      icacls C:\ProgramData\datos-granja /inheritance:r /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F"
+
 - La clave privada tiene que ser del dueno SYSTEM y solo SYSTEM y
   Administradores pueden tocarla, o ssh la rechaza al correr como SYSTEM:
 
       icacls C:\ProgramData\datos-granja\id_ed25519 /setowner *S-1-5-18
       icacls C:\ProgramData\datos-granja\id_ed25519 /inheritance:r /grant *S-1-5-18:F /grant *S-1-5-32-544:F
 
-- El script crea `C:\datos-granja` pero no le pone permisos. Para que la
-  granja lea los datos con su usuario (grupo Usuarios):
+- El script crea `C:\datos-granja` pero no le pone permisos. Que SYSTEM y
+  Administradores tengan control total y la granja lea con su usuario (grupo
+  Usuarios), sin escritura para usuarios comunes:
 
-      icacls C:\datos-granja /grant "*S-1-5-32-545:(OI)(CI)RX"
+      icacls C:\datos-granja /inheritance:r /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /grant "*S-1-5-32-545:(OI)(CI)RX"
+
+- Registrar la tarea (mismo estilo que `AgenteBDCopy-Heartbeat`): diaria 02:00,
+  SYSTEM, `StartWhenAvailable` (si la PC estaba apagada a las 02:00 corre al
+  prenderse) y 3 reintentos cada 30 minutos si sale con error:
+
+      $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1'
+      $t = New-ScheduledTaskTrigger -Daily -At 02:00
+      $p = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+      $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30)
+      Register-ScheduledTask -TaskName DatosGranja -Action $a -Trigger $t -Principal $p -Settings $s
 
 - `ping-url.txt`: la URL del check (se le quitan espacios y la `/` final). Se
   llama a `<url>` si salio bien y a `<url>/fail` si fallo. La URL no se escribe
   en el log. Si el archivo falta o el ping falla, queda una linea en el log y
   el resultado de la tarea no cambia.
 
+- Crear el check de la PC en Healthchecks (periodo 1 dia, gracia 1 h, con el
+  mismo canal de aviso que el backup) es un paso de la instalacion, no un
+  extra: sin `ping-url.txt` la bajada sigue funcionando pero nadie avisa si
+  deja de correr o falla.
+
 Como revisar:
 
     ssh Usuario@pc-astillas-2
     powershell -Command "Get-Content C:\datos-granja\bajada.log -Tail 5; Get-ScheduledTaskInfo DatosGranja | ft LastRunTime,LastTaskResult"
 
-La ultima linea del log tiene que ser `=== OK: ...` (si fue `FALLO: ...`, dice
-por que) y el ultimo resultado de la tarea 0.
+La ultima linea del log es la del ping, asi que entre las ultimas lineas tiene
+que estar `=== OK: ...` (o `FALLO: ...`, que dice por que) y el ultimo
+resultado de la tarea tiene que ser 0.
 
 Como revocar: en el panel de Hetzner, borrar la subcuenta `u607407-sub1` (o
-sacarle la clave de `.ssh/authorized_keys`); en la PC, deshabilitar la tarea
-(`Disable-ScheduledTask DatosGranja`) y borrar `C:\ProgramData\datos-granja`.
-Lo ya bajado en `C:\datos-granja` queda hasta que se borre a mano.
+sacarle la clave de `granja-datos/.ssh/authorized_keys`, editandolo con la
+**cuenta principal** del Storage Box, porque la subcuenta es de solo lectura);
+en la PC, deshabilitar la tarea (`Disable-ScheduledTask DatosGranja`) y borrar
+`C:\ProgramData\datos-granja`; y **pausar el check de Healthchecks**, si no
+avisa que falta la bajada. Lo ya bajado en `C:\datos-granja` queda hasta que
+se borre a mano.
 
 ## Puntos debiles conocidos
 
