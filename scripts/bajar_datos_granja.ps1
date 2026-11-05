@@ -111,10 +111,10 @@ try {
     # afuera .tmp-* y .ssh.
     $todas = @(Remoto "ls" | Where-Object { $_ -match $patron })
     if ($todas.Count -eq 0) { throw "el Storage Box no lista ningun paquete" }
-    $copias = @($todas | Sort-Object -Descending | Select-Object -First $Copias)
+    $elegidas = @($todas | Sort-Object -Descending | Select-Object -First $Copias)
 
     $nuevas = 0
-    foreach ($copia in $copias) {
+    foreach ($copia in $elegidas) {
         $final = Join-Path $Destino $copia
         if (Test-Path $final) { continue }
 
@@ -145,7 +145,8 @@ try {
                 }
             }
 
-            Move-Item $parcial $final
+            Move-Item $parcial $final -ErrorAction Stop
+            if (-not (Test-Path -LiteralPath $final -PathType Container)) { throw "no se pudo mover a $final" }
         }
         catch {
             Remove-Item $parcial -Recurse -Force -ErrorAction SilentlyContinue

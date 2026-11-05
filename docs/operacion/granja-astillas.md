@@ -41,7 +41,7 @@ personal. Para sacarla: borrarla en el admin de Tailscale y borrar
 | `AgenteBDCopy` | cada hora + al arrancar, SYSTEM | `scripts\correr_agente.bat --tarea` |
 | `AgenteBDCopy-Heartbeat` | cada 5 min, SYSTEM | `--solo-heartbeat` |
 | `AgenteBDCopy-Update` | diaria 03:14, SYSTEM | `--actualizar --desatendido` (modo manual) |
-| `DatosGranja` | diaria, SYSTEM | `scripts\bajar_datos_granja.ps1`: baja el paquete de datos (ver "Paquete de datos de la granja") |
+| `DatosGranja` | diaria 02:00 (hora AR), 3 reintentos, SYSTEM | `powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1`: baja el paquete de datos (ver "Paquete de datos de la granja") |
 
 `instalar_tarea.ps1` crea `AgenteBDCopy` y `-Update`; el latido se crea a
 mano (ver el procedimiento de mudanza).
@@ -65,7 +65,8 @@ Flujo:
 |---|---|
 | Script | `scripts\bajar_datos_granja.ps1` (parametros: `-Usuario`, `-Servidor`, `-Destino`, `-Clave`, `-Copias 7`) |
 | Carpeta | `C:\datos-granja` (una subcarpeta por paquete, `bajada.log`) |
-| Tarea | `DatosGranja`, diaria, SYSTEM |
+| Tarea | `DatosGranja`, diaria 02:00 hora AR, 3 reintentos, SYSTEM. Accion: `powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\datos-granja\bajar_datos_granja.ps1` |
+| Instalado en | `C:\ProgramData\datos-granja\bajar_datos_granja.ps1` (copia de `scripts\bajar_datos_granja.ps1`; hay que recopiarla si el script cambia) |
 | Subcuenta | `u607407-sub1` del Storage Box, base `granja-datos`, Read-Only, SSH habilitado, "External reachability" activada |
 | Clave SSH | `C:\ProgramData\datos-granja\id_ed25519` (propia de esta PC), con `known_hosts` al lado |
 | Ping | URL en `C:\ProgramData\datos-granja\ping-url.txt` (una linea) |
@@ -75,6 +76,10 @@ Cada paquete baja a `_parcial` y solo pasa a su carpeta con fecha si
 archivo coincide en tamano y SHA256 y no sobra ningun otro. Una carpeta con
 fecha es siempre un paquete verificado. Si algo falla no queda nada en una
 carpeta con fecha, se escribe `FALLO` en el log y la tarea sale con 1.
+
+Horario: 02:00 AR son las 05:00 UTC, despues del cron de las 04:20 UTC que
+arma el paquete. No poner la tarea antes de eso: bajaria en silencio el
+paquete del dia anterior.
 
 Instalacion (como administrador, en la PC):
 
@@ -87,7 +92,7 @@ Instalacion (como administrador, en la PC):
 - El script crea `C:\datos-granja` pero no le pone permisos. Para que la
   granja lea los datos con su usuario (grupo Usuarios):
 
-      icacls C:\datos-granja /grant *S-1-5-32-545:(OI)(CI)RX
+      icacls C:\datos-granja /grant "*S-1-5-32-545:(OI)(CI)RX"
 
 - `ping-url.txt`: la URL del check (se le quitan espacios y la `/` final). Se
   llama a `<url>` si salio bien y a `<url>/fail` si fallo. La URL no se escribe
